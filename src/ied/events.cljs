@@ -10,6 +10,8 @@
    [wscljs.client :as ws]
    [wscljs.format :as fmt]))
 
+(def list-kinds [30001 30004])
+
 (re-frame/reg-event-db
  ::initialize-db
  (fn-traced [_ _]
@@ -34,13 +36,13 @@
 (re-frame/reg-event-fx
  ::save-event
  ;; TODO if EOSE retrieved end connection identified by uri
-;; TODO make events a set (?)
  (fn-traced [{:keys [db]} [_ [uri raw-event]]]
             (let [event (nth raw-event 2 raw-event)]
               (println uri raw-event event)
               (when (and
                      (= (first raw-event) "EVENT")
-                     (not (some #(= (:id event) (:id %)) (get db :events {}))))
+                     ;;(not (some #(= (:id event) (:id %)) (get db :events {})))
+                     )
                 {:db (update db :events conj event)}))))
 
 (defn handlers
@@ -76,8 +78,8 @@
 
    (let [sockets (re-frame/subscribe [::subs/sockets])
          target-ws (first (filter #(= ws-uri (:uri %)) @sockets))]
-     (ws/send (:socket target-ws) ["REQ" "4242" {:kinds [1 30142]
-                                                 :limit 10}] fmt/json)
+     (ws/send (:socket target-ws) ["REQ" "424242" {:kinds [30142]
+                                                   :limit 10}] fmt/json)
      ; (ws/close (:socket (first @sockets))) ;; should be handled otherwise (?)
      )))
 
@@ -159,10 +161,9 @@
 (re-frame/reg-fx
  ::send-to-relays-fx
  (fn [[sockets signedEvent]]
-   (println "got relays" sockets)
    (let [connected-sockets (filter #(= "connected" (:status %)) sockets)]
      (doseq [socket connected-sockets]
-       (.log js/console "sending to relay")
+       (.log js/console "sending to relay" signedEvent)
        (ws/send (:socket socket) ["EVENT" signedEvent] fmt/json)))))
 
 (re-frame/reg-event-db
@@ -195,10 +196,12 @@
             (let [event {:kind 30142
                          :created_at (:now cofx)
                          :content "hello world"
-                         :tags [["author" "" (:author resource)]]}]
+                         :tags [["d" (:id resource)]
+                                ["author" "" (:author resource)]]}]
               {::publish-resource-fx event})))
 
 ;; TODO maybe we need some validation before publishing
+;; TODO rename function to sth like send-to-relays
 (re-frame/reg-fx
  ::publish-resource-fx
  (fn [unsignedEvent]
@@ -235,14 +238,15 @@
 (defn convert-amb-to-nostr-event
   [json-string created_at]
   (let [parsed-json (js->clj (js/JSON.parse json-string) :keywordize-keys true)
-        tags (into [["id" (:id parsed-json)]
+        tags (into [["d" (:id parsed-json)]
+                    ["id" (:id parsed-json)]
                     ["name" (:name parsed-json)]
                     ["image" (:image parsed-json)]]
                    cat [(map (fn [e] ["about" (:id e) (-> e :prefLabel :de)]) (:about parsed-json))
                         (map (fn [e] ["inLanguage" e]) (:inLanguage parsed-json))])
         event {:kind 30142
                :created_at created_at
-               :content "Added AMB Resource"
+               :content "Added AMB Resource with d-tag"
                :tags tags}]
     event))
 
@@ -269,7 +273,7 @@
                       "name" (:name list)]]
                     (map (fn [e] (cond
                                    (= 1 (:kind e)) ["e" (:id e)]
-                                   (= 30142 (:kind e)) ["a" (str "30142:" (:id e))]))
+                                   (= 30142 (:kind e)) ["a" (str "30142:" (:id e) ":" (second (first (filter #(= "d" (first %)) (:tags e)))))]))
 
                          resources-to-add))
          _ (.log js/console (clj->js tags))
@@ -281,20 +285,56 @@
 
 (re-frame/reg-event-fx
  ::get-lists-for-npub
- (fn [cofx [_ npub]]
+ (fn [cofx [_ [sockets npub]]]
+   (println "query for lists")
    (let [query-for-lists ["REQ"
-                          (str "lists-for-npub") ;; TODO maybe make this more explicit later
+                          "RAND24" ;; TODO maybe make this more explicit later
                           {:authors [(nostr/get-pk-from-npub npub)]
-                           :kinds [30004]}]]
-     {::request-from-relay query-for-lists})))
+                           :kinds list-kinds}]]
+     (.log js/console (clj->js query-for-lists))
+     {::request-from-relay [sockets query-for-lists]
+      :dispatch [::get-deleted-lists-for-npub [sockets npub]]})))
+
+(re-frame/reg-event-fx
+ ::get-deleted-lists-for-npub
+ (fn [cofx [_ [sockets npub]]]
+   (let [query-for-deleted-lists ["REQ"
+                                  "RAND24" ;; TODO maybe make this more explicit later
+                                  {:authors [(nostr/get-pk-from-npub npub)]
+                                   :kinds [5]}]]
+     (.log js/console "Query for deleted lists" (clj->js query-for-deleted-lists))
+     {::request-from-relay [sockets query-for-deleted-lists]})))
 
 (re-frame/reg-fx
  ::request-from-relay
- (fn [query]
+ (fn [[sockets query]]
    (println "requesting from relay this query: " query)
+   (doall
+    (for [s (filter (fn [s] (= "connected" (:status s))) sockets)]
+      (ws/send (:socket s) query fmt/json)))))
 
-   (let [sockets @(re-frame/subscribe [::subs/sockets])]
-     (doall
-      (for [s (filter (fn [s] (= "connected" (:status s))) sockets)]
-        (ws/send (:socket s) query fmt/json))))))
+(re-frame/reg-event-fx
+ ::query-for-event-ids
+ (fn [db [_ [sockets event-ids]]]
+   (let [query ["REQ"
+                "RAND42"
+                {:ids event-ids}]]
 
+     {::request-from-relay [sockets query]})))
+
+(re-frame/reg-event-fx
+ ::delete-list
+ [(re-frame/inject-cofx  :now)]
+ (fn [cofx [_ l]]
+   (let [deletion-event {:kind 5
+                         :created_at (:now cofx)
+                         :content ""
+                         :tags [(cond
+                                  (= 1 (:kind l))
+                                  ["e" (:id l)]
+                                  (some #{(:kind l)} (-> cofx :db :list-kinds))
+                                  ["a" (str (:kind l) ":" (:pubkey l) ":" (second (first (filter
+                                                                                          #(= "d" (first %))
+                                                                                          (:tags l)))))])]}]
+     (println deletion-event)
+     {::publish-resource-fx deletion-event})))

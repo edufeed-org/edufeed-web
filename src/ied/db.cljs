@@ -4,9 +4,9 @@
   {:name "re-frame"
    :current-path nil
    :show-add-event false
-   :events nil
+   :events #{}
    :pk nil
-   :lists nil
+   :list-kinds [30001 30004]
    :default-relays [{:name "strfry-1"
                      :uri "http://localhost:7777"
                      :id (random-uuid)

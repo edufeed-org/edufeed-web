@@ -51,17 +51,16 @@
     (println serialized-event)
     (println id)))
 
-  (defn string-to-uint8array [s]
-    (let [encoder (new js/TextEncoder)]
-      (.encode encoder s)))
+(defn string-to-uint8array [s]
+  (let [encoder (new js/TextEncoder)]
+    (.encode encoder s)))
 
 (defn get-npub-from-pk [pk]
   (.npubEncode nip19 pk))
 
 (defn get-pk-from-npub [npub]
-  (.decode nip19 npub))
+  (.-data (.decode nip19 npub)))
 
 (comment
   (get-npub-from-pk "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d")
-  (get-pk-from-npub "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6" )
-  )
+  (get-pk-from-npub "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"))

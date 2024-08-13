@@ -4,7 +4,6 @@
    [ied.events :as events]
    [ied.routes :as routes]
    [ied.subs :as subs]
-   ["react" :as react]
    [reagent.core :as reagent]))
 
 ;; add resource form
@@ -191,28 +190,32 @@
 
 ;; npub
 (defn npub-view-panel []
-  (let [route-params @(re-frame/subscribe [::subs/route-params])
-        lists @(re-frame/subscribe [::subs/lists])]
+  (let [sockets @(re-frame/subscribe [::subs/sockets])
+        route-params @(re-frame/subscribe [::subs/route-params])
+        lists @(re-frame/subscribe [::subs/lists])
+        missing-events-from-lists @(re-frame/subscribe [::subs/missing-events-from-lists])
+        _ (when (seq missing-events-from-lists) (re-frame/dispatch [::events/query-for-event-ids [sockets missing-events-from-lists]]))]
     [:div
      [:h1 (str "Hello Npub: " (:npub route-params))]
-     (if (nil? lists)
-       [:button {:class "btn"
-                 :on-click
-                 #(re-frame/dispatch [::events/get-lists-for-npub (:npub route-params)])} "Load lists"]
-       [:div "Got some lists"
+     (if-not (seq lists)
+       [:p "No lists there...yet"]
+       [:div {:class "p-2"} "Got some lists"
         (doall
          (for [l lists]
-           [:div {:key (:id l)}
-            [:li 
-            
+           [:div {:class "p-2"
+                  :key (:id l)}
+            [:li
+
              [:p (str "ID: " (:id l))]
              [:p (str "Name: " (first (filter #(= "d" (first %)) (:tags l))))]
              ;; TODO filter tags for already being in events
              ;; for all that are not send a query
-             [:p (str "Tags: " (:tags l))]]]))])
+             [:p (str "Tags: " (:tags l))]
+             [:button {:class "btn btn-error"
+                       :on-click #(re-frame/dispatch [::events/delete-list l])} "Delete List"]]]))])
      [:button {:class "btn"
                :on-click
-               #(re-frame/dispatch [::events/get-lists-for-npub (:npub route-params)])} "Load lists"]]))
+               #(re-frame/dispatch [::events/get-lists-for-npub [sockets (:npub route-params)]])} "Load lists"]]))
 
 (defmethod routes/panels :npub-view-panel [] [npub-view-panel])
 
