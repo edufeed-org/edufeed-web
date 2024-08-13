@@ -4,7 +4,7 @@
    [ied.events :as events]
    [ied.routes :as routes]
    [ied.subs :as subs]
-
+   ["react" :as react]
    [reagent.core :as reagent]))
 
 ;; add resource form
@@ -33,16 +33,27 @@
                 :value (:author @s)
                 :on-change (fn [e]
                              (swap! s assoc :author (-> e .-target .-value)))}]
-       [:button {:on-click #(re-frame/dispatch [::events/publish-resource {:name (:name @s)
+       [:button {:on-click #(re-frame/dispatch [::events/publish-resource {:name (:name @s) ;; TODO this should be sth like build event
                                                                            :uri (:uri @s)
                                                                            :author (:author @s)}])}
         "Publish Resource"]])))
 
+(defn add-resource-by-json []
+  (let [s (reagent/atom {:json-string ""})]
+    (fn []
+      [:form {:on-submit (fn [e] (.preventDefault e))}
+       [:textarea {:on-change (fn [e]
+                                (swap! s assoc :json-string (-> e .-target .-value)))}]
+       [:button {:class "btn btn-warning"
+                 :on-click #(re-frame/dispatch [::events/convert-amb-and-publish-as-nostr-event (:json-string @s)])}
+        "Publish as Nostr Event"]])))
+
 ;; events
 (defn events-panel []
   (let [events (re-frame/subscribe  [::subs/events])
+        selected-events @(re-frame/subscribe  [::subs/selected-events])
         show-add-event (re-frame/subscribe [::subs/show-add-event])]
-    [:div
+    [:div {:class "border-2 rounded"}
      [:p {:on-click #(re-frame/dispatch [::events/toggle-show-add-event])}
       (if @show-add-event "X" "Add Resource!")]
      (when @show-add-event
@@ -51,10 +62,16 @@
      (if (> (count @events) 0)
        (doall
         (for [event @events]
-          ; [:li (:content (nth event 2 {:content "hello"}))]
-          [:li {:key (:id event)} (get (nth event 2) :content "")]
-          ))
-       [:p "no events there"])]))
+          [:li {:key (:id event)} (get event :content "")
+           [:input {:type "checkbox"
+                    :on-click #(re-frame/dispatch [::events/toggle-selected-events event])}]]))
+       [:p "no events there"])
+     [:button {:class "btn"
+               :disabled (not (boolean (seq selected-events)))
+               :on-click #(re-frame/dispatch [::events/add-resources-to-list [{:d "unique-id-1"
+                                                                               :name "Test List SC"}
+                                                                              selected-events]])}
+      "Add To Lists"]]))
 
 ;; relays
 (defn add-relay-form
@@ -88,15 +105,27 @@
     [:div
      [add-relay-form]
 
-     (when (> (count @sockets) 0)
+     (if (> (count @sockets) 0)
        [:ul
         (doall
          (for [socket @sockets]
            [:li {:key (:id socket)}
             [:span (:name socket)]
-            [:button {:on-click #(re-frame/dispatch [::events/connect-to-websocket])} "Load events"]
-            [:button {:on-click #(re-frame/dispatch [::events/close-connection-to-websocket])} "Disconnect"]
-            [:button {:on-click #(re-frame/dispatch [::events/remove-websocket socket])} "Remove relay"]]))])]))
+            [:span (:status socket)]
+            [:button {:class "btn"
+                      :disabled (not= "connected" (:status socket))
+                      :on-click #(re-frame/dispatch [::events/load-events (:uri socket)])} "Load events"]
+            (if (not= (:status socket) "connected")
+              [:button {:class "btn"
+                        :on-click #(re-frame/dispatch [::events/connect-to-websocket (:uri socket)])} "Connect"]
+              [:button {:class "btn"
+                        :on-click #(re-frame/dispatch [::events/close-connection-to-websocket (:uri socket)])} "Disconnect"])
+
+            [:button {:class "btn btn-error"
+                      :on-click #(re-frame/dispatch [::events/remove-websocket socket])} "Remove relay"]]))]
+       [:p "No relays found"]
+       ;(re-frame/dispatch [::events/connect-to-default-relays])
+       )]))
 
 ;; Header
 
@@ -105,6 +134,9 @@
     [:div
      [:a {:on-click #(re-frame/dispatch [::events/navigate :home])}
       "home"]
+     "|"
+     [:a {:on-click #(re-frame/dispatch [::events/navigate :add-resource])}
+      "add resource"]
      "|"
      [:a {:on-click #(re-frame/dispatch [::events/navigate :about])}
       "about"]
@@ -115,6 +147,16 @@
      (if @pk
        [:a {:on-click #(re-frame/dispatch [::events/logout])} "logout"]
        [:a {:on-click #(re-frame/dispatch [::events/login-with-extension])} "login"])]))
+
+;; Add Resource Panel
+
+(defn add-resource-panel []
+  [:div
+   [:h1 "Add Resource"]
+   [add-resource-form]
+   [add-resource-by-json]])
+
+(defmethod routes/panels :add-resource-panel [] [add-resource-panel])
 
 ;; Settings
 (defn settings-panel []
@@ -141,19 +183,46 @@
 (defn about-panel []
   [:div
    [:h1 "This is the About Page."]
-
    [:div
     [:a {:on-click #(re-frame/dispatch [::events/navigate :home])}
      "go to Home Page"]]])
 
 (defmethod routes/panels :about-panel [] [about-panel])
 
+;; npub
+(defn npub-view-panel []
+  (let [route-params @(re-frame/subscribe [::subs/route-params])
+        lists @(re-frame/subscribe [::subs/lists])]
+    [:div
+     [:h1 (str "Hello Npub: " (:npub route-params))]
+     (if (nil? lists)
+       [:button {:class "btn"
+                 :on-click
+                 #(re-frame/dispatch [::events/get-lists-for-npub (:npub route-params)])} "Load lists"]
+       [:div "Got some lists"
+        (doall
+         (for [l lists]
+           [:div {:key (:id l)}
+            [:li 
+            
+             [:p (str "ID: " (:id l))]
+             [:p (str "Name: " (first (filter #(= "d" (first %)) (:tags l))))]
+             ;; TODO filter tags for already being in events
+             ;; for all that are not send a query
+             [:p (str "Tags: " (:tags l))]]]))])
+     [:button {:class "btn"
+               :on-click
+               #(re-frame/dispatch [::events/get-lists-for-npub (:npub route-params)])} "Load lists"]]))
+
+(defmethod routes/panels :npub-view-panel [] [npub-view-panel])
+
 ;; main
 (defn main-panel []
   (let [active-panel (re-frame/subscribe [::subs/active-panel])]
     [:div
      [header]
-     (routes/panels @active-panel)]))
+     [:div
+      (routes/panels @active-panel)]]))
 
 (comment
 

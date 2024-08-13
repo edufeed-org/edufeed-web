@@ -10,9 +10,16 @@
 
 (def routes
   (atom
-   ["/" {""      :home
-         "about" :about
-         "settings" :settings}]))
+   ["/"
+    {""      :home
+     "add-resource" :add-resource
+     "about" :about
+     "settings" :settings
+     ["" [#"npub1[ac-hj-np-z02-9]{58}" :npub]] {"" :npub-view
+                                              "/" :npub-view}}]))
+
+(comment
+  (parse "/npub1r30l8j4vmppvq8w23umcyvd3vct4zmfpfkn4c7h2h057rmlfcrmq9xt9ma/"))
 
 (defn parse
   [url]
@@ -25,7 +32,7 @@
 (defn dispatch
   [route]
   (let [panel (keyword (str (name (:handler route)) "-panel"))]
-    (re-frame/dispatch [::events/set-active-panel panel])))
+    (re-frame/dispatch  [::events/set-route {:route route :panel panel}])))
 
 (defonce history
   (pushy/pushy dispatch parse))
@@ -42,3 +49,4 @@
  :navigate
  (fn [handler]
    (navigate! handler)))
+
