@@ -19,9 +19,10 @@
                      :uri "http://localhost:4445"
                      :id (random-uuid)
                      :status "disconnected"}
-                    ; {:name "damus"
-                    ;  :uri "wss://relay.damus.io"
-                    ;  :status "disconnected"}
+                    {:name "damus"
+                     :uri "wss://relay.damus.io"
+                     :status "disconnected"}
                     ]
-   :selected-events nil
+   :selected-events #{}
+   :selected-lists #{}
    :sockets []})
