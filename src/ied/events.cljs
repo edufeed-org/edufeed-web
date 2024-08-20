@@ -11,9 +11,8 @@
    [wscljs.format :as fmt]
    [clojure.string :as str]
    [clojure.set :as set]
-   
-   ["js-confetti" :as jsConfetti]
-   ))
+
+   ["js-confetti" :as jsConfetti]))
 
 (def list-kinds [30001 30004])
 
@@ -196,15 +195,18 @@
                          :content ""
                          :tags [["d" (:id resource)]
                                 ["author" "" (:author resource)]]}]
-              {::sign-and-publish-event event})))
+              {::sign-and-publish-event [event (:sk cofx)]})))
 
 ;; TODO maybe we need some validation before publishing
 (re-frame/reg-fx
  ::sign-and-publish-event
- (fn [unsignedEvent]
+ (fn [[unsignedEvent sk]]
    (if (nostr/valid-unsigned-nostr-event? unsignedEvent)
      (p/let [_ (js/console.log (clj->js unsignedEvent))
-             signedEvent (.nostr.signEvent js/window (clj->js unsignedEvent))
+             _ (js/console.log (nostr/sk-as-hex sk))
+             signedEvent (if (nil? sk)
+                           (.nostr.signEvent js/window (clj->js unsignedEvent))
+                           (nostr/finalize-event unsignedEvent sk))
              _ (js/console.log "Signed event: " (clj->js signedEvent))]
        (re-frame/dispatch [::send-to-relays signedEvent]))
      (.error js/console "Event is not a valid nostr event: " (clj->js unsignedEvent)))))
@@ -236,6 +238,16 @@
  (fn [cofx _data] ;; _data unused
    (assoc cofx :now (quot (.now js/Date) 1000))))
 
+(re-frame/reg-cofx
+ :sk
+ (fn [cofx _]
+   (assoc cofx :sk (:sk cofx))))
+
+(re-frame/reg-cofx
+ :pk
+ (fn [cofx _]
+   (assoc cofx :pk (:pk cofx))))
+
 (defn convert-amb-to-nostr-event
   [json-string created_at]
   (let [parsed-json (js->clj (js/JSON.parse json-string) :keywordize-keys true)
@@ -258,7 +270,7 @@
  [(re-frame/inject-cofx  :now)]
  (fn-traced [cofx [_ json-string]]
             (let [event (convert-amb-to-nostr-event json-string (:now cofx))]
-              {::sign-and-publish-event event})))
+              {::sign-and-publish-event [event (-> cofx :db :sk)]})))
 
 (re-frame/reg-event-fx
  ::toggle-selected-events
@@ -294,7 +306,7 @@
                 :created_at (:now cofx)
                 :content ""
                 :tags new-tags}]
-     {::sign-and-publish-event event})))
+     {::sign-and-publish-event [event (:sk cofx)]})))
 
 (re-frame/reg-event-fx
  ::add-metadata-events-to-lists
@@ -366,7 +378,7 @@
                             :created_at (:now cofx)
                             :content ""
                             :tags tags}]
-     {::sign-and-publish-event create-list-event})))
+     {::sign-and-publish-event [create-list-event (:sk cofx)]})))
 
 (re-frame/reg-event-fx
  ::delete-list
@@ -382,7 +394,7 @@
                                   ["a" (str (:kind l) ":" (:pubkey l) ":" (second (first (filter
                                                                                           #(= "d" (first %))
                                                                                           (:tags l)))))])]}]
-     {::sign-and-publish-event deletion-event})))
+     {::sign-and-publish-event [deletion-event (:sk cofx)]})))
 
 (re-frame/reg-event-db
  ::toggle-show-lists-modal
@@ -412,7 +424,7 @@
                 :created_at (:now cofx)
                 :content ""
                 :tags filtered-tags}]
-     {::sign-and-publish-event event})))
+     {::sign-and-publish-event [event (:sk cofx)]})))
 
 (re-frame/reg-event-db
  ::create-sk
@@ -437,11 +449,8 @@
    {::get-amb-json-from-uri uri}))
 
 (re-frame/reg-event-fx
-  ::add-confetti
-  (fn [_ _]
-    ;; Initialize jsConfetti instance if needed
-    (let [confetti-instance (new jsConfetti)]
-      ;; Trigger the confetti
-      (.addConfetti confetti-instance ))
-    ;; No further effects needed
-    {}))
+ ::add-confetti
+ (fn [_ _]
+   (let [confetti-instance (new jsConfetti)]
+     (.addConfetti confetti-instance))
+   {}))

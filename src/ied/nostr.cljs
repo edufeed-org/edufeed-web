@@ -34,10 +34,11 @@
           hashArray (.from js/Array (new js/Uint8Array hash))
           byteArray (js/Uint8Array. hashArray)
           hexArray (byte-array-to-hex byteArray)]
+    (.log js/console hexArray)
     hexArray))
 
-(defn signEvent [hashedEvent sk]
-  (.sign secp hashedEvent sk))
+(defn finalize-event [event sk]
+  (.finalizeEvent nostr (clj->js event) sk))
 
 (defn generate-sk []
   ;; Generate a secure (private) key as byte array
@@ -105,7 +106,7 @@
 
 (defn get-image-from-metadata-event [event]
   (or (let [img-url (second (first (filter #(= "image" (first %)) (:tags event))))]
-       (if (= "" img-url ) false img-url))
+        (if (= "" img-url) false img-url))
       "/assets/edu-feed-logo.webp"))
 
 (defn get-description-from-metadata-event [event]
