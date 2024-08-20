@@ -6,6 +6,7 @@
    :show-add-event false
    :events #{}
    :pk nil
+   :sk nil
    :list-kinds [30001 30004]
    :default-relays [{:name "strfry-1"
                      :uri "http://localhost:7777"
@@ -19,10 +20,16 @@
                      :uri "http://localhost:4445"
                      :id (random-uuid)
                      :status "disconnected"}
-                    {:name "damus"
-                     :uri "wss://relay.damus.io"
+                    ; {:name "damus"
+                    ;  :uri "wss://relay.damus.io"
+                    ;  :status "disconnected"}
+                    {:name "SC24"
+                     :uri "wss://relay.sc24.steffen-roertgen.de"
                      :status "disconnected"}
                     ]
    :selected-events #{}
-   :selected-lists #{}
+   :selected-list-ids #{}
+   :show-lists-modal false
+   :show-create-list-modal false
+   :show-event-data-modal false
    :sockets []})

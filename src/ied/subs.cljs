@@ -2,7 +2,8 @@
   (:require
    [re-frame.core :as re-frame]
    [clojure.string :as str]
-   [clojure.set :as set]))
+   [clojure.set :as set]
+   [ied.nostr :as nostr]))
 
 (re-frame/reg-sub
  ::name
@@ -20,15 +21,15 @@
    (:sockets db)))
 
 (re-frame/reg-sub
- ::connected-sockets
- :<- [::sockets]
- (fn [[sockets]]
-   (filter #(= (:status %) "connected") sockets)))
-
-(re-frame/reg-sub
  ::events
  (fn [db _]
    (:events db)))
+
+
+(re-frame/reg-sub
+ ::metadata-events
+ (fn [db _]
+   (sort-by :created_at #(> %1 %2) (filter (fn [e] (= 30142 (:kind e))) (:events db)))))
 
 (re-frame/reg-sub
  ::show-add-event
@@ -41,6 +42,16 @@
    (:pk db)))
 
 (re-frame/reg-sub
+ ::npub
+ (fn [db _]
+   (nostr/get-npub-from-pk (:pk db))))
+
+(re-frame/reg-sub
+ ::nsec
+ (fn [db _]
+   (nostr/sk-as-nsec (:sk db))))
+
+(re-frame/reg-sub
  ::default-relays
  (fn [db _]
    (:default-relays db)))
@@ -49,6 +60,18 @@
  ::selected-events
  (fn [db _]
    (:selected-events db)))
+
+(re-frame/reg-sub
+ ::selected-list-ids
+ (fn [db]
+   (:selected-list-ids db)))
+
+(re-frame/reg-sub
+ ::selected-lists
+ :<- [::lists-of-user]
+ :<- [::selected-list-ids]
+ (fn [[lists-of-user selected-list-ids]]
+   (filter #(contains? selected-list-ids (:id %)) lists-of-user)))
 
 (re-frame/reg-sub
  ::route-params
@@ -64,14 +87,23 @@
   [tags]
   (second (first (filter (fn [t] (= "d" (first t))) tags))))
 
-(comment
-  (get-d-id-from-tags [["d" "https://wtcs.pressbopub/digitalliteracy/"]]))
-
 (defn d-id-not-in-deleted-list-ids
   [d-id deleted-list-ids]
   (println d-id
            deleted-list-ids)
   (not (contains? deleted-list-ids d-id)))
+
+(defn most-recent-by-d-tag
+  [events]
+  (->> events
+       (group-by (fn [event]
+                   (some (fn [[tag-type tag-value]]
+                           (when (= tag-type "d")
+                             tag-value))
+                         (:tags event))))
+       (map (fn [[d-tag events]]
+              (apply max-key :created_at events)))
+       (into [])))
 
 (re-frame/reg-sub
  ::lists
@@ -80,9 +112,38 @@
  :<- [::deleted-list-ids]
  (fn [[list-kinds events deleted-lists]]
    (let [all-lists (filter #(and (some #{(:kind %)} list-kinds)
-                                 (d-id-not-in-deleted-list-ids (get-d-id-from-tags (:tags %)) deleted-lists))
-                           events)]
-     all-lists)))
+                                 #_(d-id-not-in-deleted-list-ids (get-d-id-from-tags (:tags %)) deleted-lists))
+                           events)
+         most-recent-lists (most-recent-by-d-tag all-lists)]
+     (.log js/console "all lists: " (clj->js all-lists))
+     (.log js/console "most recent lists: " (clj->js most-recent-lists))
+     most-recent-lists)))
+
+(re-frame/reg-sub
+ ::feed-events
+ :<- [::metadata-events]
+ :<- [::lists]
+ (fn [[md-events lists]]
+   (sort-by :created_at #(> %1 %2) (concat md-events lists))))
+
+(re-frame/reg-sub
+ ::lists-of-user
+ :<- [::pk]
+ :<- [::lists]
+ (fn [[pk lists]]
+   (set (filter #(= pk (:pubkey %)) lists))))
+
+(re-frame/reg-sub
+ ::lists-for-npub
+ :<- [::route-params]
+ :<- [::lists]
+ (fn [[route-params lists]]
+   (let [npub (:npub route-params)]
+     (set (filter #(= (nostr/get-pk-from-npub npub) (:pubkey %)) lists)))))
+
+(comment
+  (seq [1])
+  (seq #{1}))
 
 (defn extract-d-id-from-tags
   [s]
@@ -102,18 +163,11 @@
  ::deleted-list-ids
  (fn [db _]
    (let [kind-5-events (filter (fn [e] (= 5 (:kind e))) (:events db))
+         ;; TODO find list events after the timestamp of the last kind5 event
+         ;; get d-tags of that events
+         ;; filter that d-tags out of the deleted-list-ids
          deleted-list-ids (get-d-ids-from-events kind-5-events)]
-     (.log js/console "kind-5-events: " (clj->js kind-5-events))
-     (.log js/console "Deleted list-ids " (clj->js deleted-list-ids))
      deleted-list-ids)))
-
-(defn extract-id-from-tags
-  [s]
-  (println s)
-  (let [parts (str/split s #":")]
-    (if (>= (count parts) 2)
-      (second parts)
-      s)))
 
 (re-frame/reg-sub
  ::missing-events-from-lists
@@ -123,14 +177,34 @@
    (let [event-ids-from-list-tags (->> (into [] cat (map (fn [l] (:tags l)) lists))
                                        (filter #(= (or "a" "e") (first %))) ;; just a and e tags
                                        (map second) ;; just the id
-                                       (map extract-id-from-tags)
+                                       (map nostr/extract-id-from-tag)
                                        (set))
          event-ids (set (map #(:id %) events))
          missing-events (set/difference event-ids-from-list-tags event-ids)]
-     (.log js/console "Missing IDs: " (clj->js missing-events))
+     ; (.log js/console "Missing IDs: " (clj->js missing-events))
      missing-events)))
 
-(comment
-  (>= 2 (count (str/split "3013:fjkldj:https://jfdajdfklö" #":")))
+(re-frame/reg-sub
+ ::show-lists-modal
+ (fn [db _]
+   (:show-lists-modal db)))
 
-  (extract-id-from-tags "30142:e2d8b8e3381386976a57091199d23:https://wtcs.pressbooks.pub/digitalliteracy/"))
+(re-frame/reg-sub
+ ::show-create-list-modal
+ (fn [db _]
+   (:show-create-list-modal db)))
+
+(re-frame/reg-sub
+ ::show-event-data-modal
+ (fn [db _]
+   (:show-event-data-modal db)))
+
+(re-frame/reg-sub
+ ::selected-event
+ (fn [db _]
+   (:selected-event db)))
+
+(re-frame/reg-sub
+ ::events-in-list
+ (fn [db [_ event-ids]]
+   (filter (fn [e] (contains? event-ids (:id e))) (:events db))))

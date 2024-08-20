@@ -13,13 +13,17 @@
    ["/"
     {""      :home
      "add-resource" :add-resource
+     "keys" :keys
+     "feed" :event-feed
      "about" :about
      "settings" :settings
      ["" [#"npub1[ac-hj-np-z02-9]{58}" :npub]] {"" :npub-view
-                                              "/" :npub-view}}]))
+                                                "/" :npub-view}}]))
 
 (comment
-  (parse "/npub1r30l8j4vmppvq8w23umcyvd3vct4zmfpfkn4c7h2h057rmlfcrmq9xt9ma/"))
+  (parse "/npub1r30l8j4vmppvq8w23umcyvd3vct4zmfpfkn4c7h2h057rmlfcrmq9xt9ma/")
+  (apply url-for [:npub-view :npub "npub1r30l8j4vmppvq8w23umcyvd3vct4zmfpfkn4c7h2h057rmlfcrmq9xt9ma"])
+  (apply url-for [:home]))
 
 (defn parse
   [url]
@@ -39,7 +43,7 @@
 
 (defn navigate!
   [handler]
-  (pushy/set-token! history (url-for handler)))
+  (pushy/set-token! history (apply url-for handler)))
 
 (defn start!
   []

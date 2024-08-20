@@ -8,7 +8,12 @@
 
    [promesa.core :as p]
    [wscljs.client :as ws]
-   [wscljs.format :as fmt]))
+   [wscljs.format :as fmt]
+   [clojure.string :as str]
+   [clojure.set :as set]
+   
+   ["js-confetti" :as jsConfetti]
+   ))
 
 (def list-kinds [30001 30004])
 
@@ -38,11 +43,8 @@
  ;; TODO if EOSE retrieved end connection identified by uri
  (fn-traced [{:keys [db]} [_ [uri raw-event]]]
             (let [event (nth raw-event 2 raw-event)]
-              (println uri raw-event event)
               (when (and
-                     (= (first raw-event) "EVENT")
-                     ;;(not (some #(= (:id event) (:id %)) (get db :events {})))
-                     )
+                     (= (first raw-event) "EVENT"))
                 {:db (update db :events conj event)}))))
 
 (defn handlers
@@ -50,7 +52,6 @@
   {:on-message (fn [e] (re-frame/dispatch [::save-event [ws-uri (-> (.-data e)
                                                                     js/JSON.parse
                                                                     (js->clj :keywordize-keys true))]]))
-   ; :on-open    #(prn "Opening a new connection")
    :on-open    #(re-frame/dispatch  [::load-events ws-uri])
    :on-close   #(prn "Closing a connection")
    :on-error   (fn [e] (.log js/console "Error with uri: " ws-uri (clj->js e))
@@ -78,8 +79,8 @@
 
    (let [sockets (re-frame/subscribe [::subs/sockets])
          target-ws (first (filter #(= ws-uri (:uri %)) @sockets))]
-     (ws/send (:socket target-ws) ["REQ" "424242" {:kinds [30142]
-                                                   :limit 10}] fmt/json)
+     (ws/send (:socket target-ws) ["REQ" "424242" {:kinds [30004 30142]
+                                                   :limit 100}] fmt/json)
      ; (ws/close (:socket (first @sockets))) ;; should be handled otherwise (?)
      )))
 
@@ -119,9 +120,7 @@
  (fn [ws-uri]
    (let [sockets (re-frame/subscribe [::subs/sockets])
          target-ws (first (filter #(= ws-uri (:uri %)) @sockets))]
-     (re-frame/dispatch [::create-websocket target-ws])
-     ; (ws/create (:uri target-ws) (handlers (:uri target-ws)))
-     )))
+     (re-frame/dispatch [::create-websocket target-ws]))))
 
 ;; TODO use id to close socket
 ;; add connection status to socket
@@ -163,7 +162,6 @@
  (fn [[sockets signedEvent]]
    (let [connected-sockets (filter #(= "connected" (:status %)) sockets)]
      (doseq [socket connected-sockets]
-       (.log js/console "sending to relay" signedEvent)
        (ws/send (:socket socket) ["EVENT" signedEvent] fmt/json)))))
 
 (re-frame/reg-event-db
@@ -195,19 +193,21 @@
  (fn-traced [cofx [_ resource]]
             (let [event {:kind 30142
                          :created_at (:now cofx)
-                         :content "hello world"
+                         :content ""
                          :tags [["d" (:id resource)]
                                 ["author" "" (:author resource)]]}]
-              {::publish-resource-fx event})))
+              {::sign-and-publish-event event})))
 
 ;; TODO maybe we need some validation before publishing
-;; TODO rename function to sth like send-to-relays
 (re-frame/reg-fx
- ::publish-resource-fx
+ ::sign-and-publish-event
  (fn [unsignedEvent]
-   (p/let [_ (js/console.log (clj->js unsignedEvent))
-           signedEvent (.nostr.signEvent js/window (clj->js unsignedEvent))]
-     (re-frame/dispatch [::send-to-relays signedEvent]))))
+   (if (nostr/valid-unsigned-nostr-event? unsignedEvent)
+     (p/let [_ (js/console.log (clj->js unsignedEvent))
+             signedEvent (.nostr.signEvent js/window (clj->js unsignedEvent))
+             _ (js/console.log "Signed event: " (clj->js signedEvent))]
+       (re-frame/dispatch [::send-to-relays signedEvent]))
+     (.error js/console "Event is not a valid nostr event: " (clj->js unsignedEvent)))))
 
 (re-frame/reg-event-fx
  ::login-with-extension
@@ -220,15 +220,16 @@
    (p/let [pk (.nostr.getPublicKey js/window)]
      (re-frame/dispatch [::save-pk pk]))))
 
-(re-frame/reg-event-db
+(re-frame/reg-event-fx
  ::save-pk
- (fn-traced [db [_ pk]]
-            (assoc db :pk pk)))
+ (fn-traced [{:keys [db]} [_ pk]]
+            {:db (assoc db :pk pk)
+             :dispatch [::get-lists-for-npub (nostr/get-npub-from-pk pk)]}))
 
 (re-frame/reg-event-db
  ::logout
  (fn-traced [db _]
-            (assoc db :pk nil)))
+            (assoc db :pk nil :sk nil)))
 
 (re-frame/reg-cofx
  :now
@@ -239,9 +240,11 @@
   [json-string created_at]
   (let [parsed-json (js->clj (js/JSON.parse json-string) :keywordize-keys true)
         tags (into [["d" (:id parsed-json)]
+                    ["r" (:id parsed-json)]
                     ["id" (:id parsed-json)]
                     ["name" (:name parsed-json)]
-                    ["image" (:image parsed-json)]]
+                    ["description" (:description parsed-json "")]
+                    ["image" (:image parsed-json "")]]
                    cat [(map (fn [e] ["about" (:id e) (-> e :prefLabel :de)]) (:about parsed-json))
                         (map (fn [e] ["inLanguage" e]) (:inLanguage parsed-json))])
         event {:kind 30142
@@ -255,43 +258,66 @@
  [(re-frame/inject-cofx  :now)]
  (fn-traced [cofx [_ json-string]]
             (let [event (convert-amb-to-nostr-event json-string (:now cofx))]
-              {::publish-resource-fx event})))
-
-(re-frame/reg-event-db
- ::toggle-selected-events
- (fn [db [_ event]]
-   (js/console.log "toggling selected event with id" (:id event))
-   (if (some #(= event (:id %)) (:selected-events db))
-     (assoc db :selected-events (filter #(not= event (:id %)) (:selected-events db)))
-     (update db :selected-events conj event))))
+              {::sign-and-publish-event event})))
 
 (re-frame/reg-event-fx
- ::add-resources-to-list
+ ::toggle-selected-events
+ (fn [{:keys [db]} [_ event]]
+   (let [selected-event-ids (set (map (fn [e] (:id e)) (:selected-events db)))]
+     (if (and (seq (:selected-events db))
+              (contains? selected-event-ids (:id event)))
+       {:db (assoc db  :selected-events (filter #(not= (:id event) (:id %)) (:selected-events db)))}
+       {:db (update db :selected-events conj event)}))))
+
+(re-frame/reg-event-db
+ ::toggle-selected-list-ids
+ (fn [db [_ id]]
+   (println "Toggle list ids: " id)
+   (let [in-selected-list-ids (contains? (:selected-list-ids db) id)]
+     (if in-selected-list-ids
+       (update db :selected-list-ids disj id)
+       (update db :selected-list-ids conj id)))))
+
+(re-frame/reg-event-fx
+ ::add-metadata-event-to-list
  [(re-frame/inject-cofx  :now)]
  (fn [cofx [_ [list resources-to-add]]]
-   (let [tags (into [["d" (:d list)
-                      "name" (:name list)]]
-                    (map (fn [e] (cond
-                                   (= 1 (:kind e)) ["e" (:id e)]
-                                   (= 30142 (:kind e)) ["a" (str "30142:" (:id e) ":" (second (first (filter #(= "d" (first %)) (:tags e)))))]))
-
-                         resources-to-add))
-         _ (.log js/console (clj->js tags))
+   (let [existing-tags  (:tags list)
+         existing-tags-set  (set existing-tags)
+         tags-to-add (filter #(not (contains? existing-tags-set %))
+                             (map (fn [e] (cond
+                                            (= 1 (:kind e)) ["e" (:id e)]
+                                            (= 30142 (:kind e)) (nostr/build-kind-30142-tag e)))
+                                  resources-to-add))
+         new-tags (vec (concat existing-tags tags-to-add))
          event {:kind 30004
                 :created_at (:now cofx)
                 :content ""
-                :tags tags}]
-     {::publish-resource-fx event})))
+                :tags new-tags}]
+     {::sign-and-publish-event event})))
+
+(re-frame/reg-event-fx
+ ::add-metadata-events-to-lists
+ (fn [cofx [_ [events lists]]]
+   (let [dispatch-events (mapv (fn [l] [::add-metadata-event-to-list [l events]]) lists)
+         _ (.log js/console (clj->js dispatch-events))]
+     {:fx [[:dispatch-n dispatch-events]]})))
+
+(defn sanitize-subscription-id [s]
+  (str/join "" (take 64 s)))
+
+(defn make-sub-id [prefix id]
+  (-> (str prefix id)
+      (sanitize-subscription-id)))
 
 (re-frame/reg-event-fx
  ::get-lists-for-npub
- (fn [cofx [_ [sockets npub]]]
-   (println "query for lists")
+ (fn [{:keys [db]} [_ npub]]
    (let [query-for-lists ["REQ"
-                          "RAND24" ;; TODO maybe make this more explicit later
+                          (make-sub-id "lists-" npub) ;; TODO maybe make this more explicit later
                           {:authors [(nostr/get-pk-from-npub npub)]
-                           :kinds list-kinds}]]
-     (.log js/console (clj->js query-for-lists))
+                           :kinds list-kinds}]
+         sockets (:sockets db)]
      {::request-from-relay [sockets query-for-lists]
       :dispatch [::get-deleted-lists-for-npub [sockets npub]]})))
 
@@ -299,16 +325,16 @@
  ::get-deleted-lists-for-npub
  (fn [cofx [_ [sockets npub]]]
    (let [query-for-deleted-lists ["REQ"
-                                  "RAND24" ;; TODO maybe make this more explicit later
+                                  (make-sub-id  "deleted-lists-" npub) ;; TODO maybe make this more explicit later
                                   {:authors [(nostr/get-pk-from-npub npub)]
                                    :kinds [5]}]]
-     (.log js/console "Query for deleted lists" (clj->js query-for-deleted-lists))
      {::request-from-relay [sockets query-for-deleted-lists]})))
+
+(comment)
 
 (re-frame/reg-fx
  ::request-from-relay
  (fn [[sockets query]]
-   (println "requesting from relay this query: " query)
    (doall
     (for [s (filter (fn [s] (= "connected" (:status s))) sockets)]
       (ws/send (:socket s) query fmt/json)))))
@@ -321,6 +347,26 @@
                 {:ids event-ids}]]
 
      {::request-from-relay [sockets query]})))
+
+(defn cleanup-list-name [s]
+  (-> s
+      (str/replace #"\s" "-")
+      (str/replace #"[^a-zA-Z0-9]" "-")))
+
+(comment
+  (cleanup-list-name "this is gönna be an awesüm+ l]st"))
+
+(re-frame/reg-event-fx
+ ::create-new-list
+ [(re-frame/inject-cofx  :now)]
+ (fn [cofx [_ name]]
+   (let [tags [["d" (cleanup-list-name name)]
+               ["name" name]]
+         create-list-event {:kind 30004
+                            :created_at (:now cofx)
+                            :content ""
+                            :tags tags}]
+     {::sign-and-publish-event create-list-event})))
 
 (re-frame/reg-event-fx
  ::delete-list
@@ -336,5 +382,66 @@
                                   ["a" (str (:kind l) ":" (:pubkey l) ":" (second (first (filter
                                                                                           #(= "d" (first %))
                                                                                           (:tags l)))))])]}]
-     (println deletion-event)
-     {::publish-resource-fx deletion-event})))
+     {::sign-and-publish-event deletion-event})))
+
+(re-frame/reg-event-db
+ ::toggle-show-lists-modal
+ (fn [db _]
+   (assoc db :show-lists-modal (not (:show-lists-modal db)))))
+
+(re-frame/reg-event-db
+ ::toggle-show-create-list-modal
+ (fn [db _]
+   (assoc db :show-create-list-modal (not (:show-create-list-modal db)))))
+
+(re-frame/reg-event-db
+ ::toggle-show-event-data-modal
+ (fn [db [_ event]]
+   (assoc db
+          :show-event-data-modal (not (:show-event-data-modal db))
+          :selected-event event)))
+
+(re-frame/reg-event-fx
+ ::delete-event-from-list
+ [(re-frame/inject-cofx  :now)]
+ (fn [cofx [_ [event list]]]
+   (let [filtered-tags (filterv (fn [t] (not= (:id event) (nostr/extract-id-from-tag (second t)))) (:tags list))
+         _ (println (:tags list))
+         _ (.log js/console "Filtered Tags: " (clj->js filtered-tags))
+         event {:kind 30004
+                :created_at (:now cofx)
+                :content ""
+                :tags filtered-tags}]
+     {::sign-and-publish-event event})))
+
+(re-frame/reg-event-db
+ ::create-sk
+ (fn [db [_]]
+   (let [sk (nostr/generate-sk)
+         pk (nostr/get-pk-from-sk sk)]
+     (assoc db :sk sk :pk pk))))
+
+(re-frame/reg-fx
+ ::get-amb-json-from-uri
+ (fn [uri]
+   (p/let [raw-html (js/fetch  uri {:headers {"Access-Control-Allow-Origin" "*"}})]
+     (println raw-html))))
+
+(comment
+  (p/->> (js/fetch "https://oersi.org/resources/aHR0cHM6Ly9lZ292LWNhbXB1cy5vcmcvY291cnNlcy9hcmJlaXRlbnVuZGZ1ZWhyZW5fdXBfMjAyMi0x")
+         (println)))
+
+(re-frame/reg-event-fx
+ ::publish-amb-uri-as-nostr-event
+ (fn [db [_ uri]]
+   {::get-amb-json-from-uri uri}))
+
+(re-frame/reg-event-fx
+  ::add-confetti
+  (fn [_ _]
+    ;; Initialize jsConfetti instance if needed
+    (let [confetti-instance (new jsConfetti)]
+      ;; Trigger the confetti
+      (.addConfetti confetti-instance ))
+    ;; No further effects needed
+    {}))
