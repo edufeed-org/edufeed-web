@@ -12,7 +12,8 @@
    [clojure.string :as str]
    [clojure.set :as set]
 
-   ["js-confetti" :as jsConfetti]))
+   ["js-confetti" :as jsConfetti]
+   [js-confetti :as jsConfetti]))
 
 (def list-kinds [30001 30004])
 
@@ -45,7 +46,8 @@
             (let [event (nth raw-event 2 raw-event)]
               (when (and
                      (= (first raw-event) "EVENT"))
-                {:db (update db :events conj event)}))))
+                {:dispatch [::add-confetti]
+                 :db (update db :events conj event)}))))
 
 (defn handlers
   [ws-uri]
@@ -451,12 +453,18 @@
  (fn [db [_ uri]]
    {::get-amb-json-from-uri uri}))
 
+(def confetti-instance
+  (new jsConfetti))
+
 (re-frame/reg-event-fx
  ::add-confetti
- (fn [_ _]
-   (let [confetti-instance (new jsConfetti)]
-     (.addConfetti confetti-instance (clj->js {:emojis ["😺" "🐈‍⬛" "🦄"]})))
-   {}))
+ (fn [cofx _]
+   (let [visited-at (-> cofx :db :visited-at)
+         now (quot (.now js/Date) 1000)
+         diff (- now visited-at)]
+     (when (>= diff 5)
+       (.addConfetti confetti-instance (clj->js {:emojis ["😺" "🐈‍⬛" "🦄"]})))
+     {})))
 
 (re-frame/reg-event-fx
  ::set-visit-timestamp

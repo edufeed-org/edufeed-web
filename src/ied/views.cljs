@@ -84,7 +84,7 @@
         visited-at @(re-frame/subscribe [::subs/visited-at])
         now (quot (.now js/Date) 1000)
         diff (- now visited-at)
-        _ (when (>= diff 5)
+        _ () #_(when (>= diff 5)
             (re-frame/dispatch [::events/add-confetti]))]
     [:div
      {:class "animate-flyIn card bg-base-100 w-96 shadow-xl min-h-[620px]"}
