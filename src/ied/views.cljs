@@ -15,26 +15,29 @@
                          :uri uri
                          :author author})]
     (fn []
-      [:form {:on-submit (fn [e]
-                           (.preventDefault e)
+      [:form  {:on-submit (fn [e]
+                            (.preventDefault e)
                             ;; do something with the state @s
-                           )}
-       [:label {:for name} "Name: "]
-       [:input {:type :text :name :name
-                :value (:name @s)
-                :on-change (fn [e]
-                             (swap! s assoc :name (-> e .-target .-value)))}]
-       [:label {:for uri} "Uri: "]
-       [:input {:type :text :name :uri
-                :value (:uri @s)
-                :on-change (fn [e]
-                             (swap! s assoc :uri (-> e .-target .-value)))}]
-       [:label {:for uri} "Author: "]
-       [:input {:type :text :name :author
-                :value (:author @s)
-                :on-change (fn [e]
-                             (swap! s assoc :author (-> e .-target .-value)))}]
-       [:button {:class "btn btn-warning"
+                            )}
+       [:label
+        {:class "input input-bordered flex items-center gap-2"}
+        "Name"
+        [:input {:on-change (fn [e]
+                              (swap! s assoc :name (-> e .-target .-value)))
+                 :type "text", :class "grow", :placeholder "Daisy"}]]
+       [:label
+        {:class "input input-bordered flex items-center gap-2"}
+        "URL"
+        [:input {:on-change (fn [e]
+                              (swap! s assoc :uri (-> e .-target .-value)))
+                 :type "text", :class "grow", :placeholder "daisy@site.com"}]]
+       [:label
+        {:class "input input-bordered flex items-center gap-2"}
+        [:input {:on-change (fn [e]
+                              (swap! s assoc :author (-> e .-target .-value)))
+                 :type "text", :class "grow", :placeholder "Author"}]]
+
+       [:button {:class "btn btn-warning w-1/2 mx-auto"
                  :on-click #(re-frame/dispatch [::events/publish-resource {:name (:name @s) ;; TODO this should be sth like build event
                                                                            :id (:uri @s)
                                                                            :author (:author @s)}])}
@@ -85,7 +88,7 @@
         now (quot (.now js/Date) 1000)
         diff (- now visited-at)
         _ () #_(when (>= diff 5)
-            (re-frame/dispatch [::events/add-confetti]))]
+                 (re-frame/dispatch [::events/add-confetti]))]
     [:div
      {:class "animate-flyIn card bg-base-100 w-96 shadow-xl min-h-[620px]"}
      [:figure
@@ -415,10 +418,18 @@
 ;; Add Resource Panel
 (defn add-resource-panel []
   [:div
-   [:h1 "Add Resource"]
+   {:class "w-1/2 mx-auto flex flex-col space-y-4"}
    [add-resource-form]
-   [add-resource-by-json]
-   [add-resosurce-by-uri]])
+   [:div
+    {:tabIndex "0",
+     :class "collapse collapse-arrow border-base-300 bg-base-200 border"}
+    [:div
+     {:class "collapse-title text-xl font-medium"}
+     "Focus me to see content"]
+    [:div
+     {:class "collapse-content"}
+     [add-resource-by-json]
+     [add-resosurce-by-uri]]]])
 
 (defmethod routes/panels :add-resource-panel [] [add-resource-panel])
 
