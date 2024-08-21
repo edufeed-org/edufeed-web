@@ -54,11 +54,12 @@
         [:input {:on-change (fn [e]
                               (swap! s assoc :uri (-> e .-target .-value)))
                  :type "text", :class "grow", :placeholder "https://wirlernenonline.de/r31"}]]
-       [:label
-        {:class "input input-bordered flex items-center gap-2"}
-        [:input {:on-change (fn [e]
-                              (swap! s assoc :author (-> e .-target .-value)))
-                 :type "text", :class "grow", :placeholder "Robbi"}]]
+       #_[:label
+          {:class "input input-bordered flex items-center gap-2"}
+          "Author"
+          [:input {:on-change (fn [e]
+                                (swap! s assoc :author (-> e .-target .-value)))
+                   :type "text", :class "grow", :placeholder "Robbi"}]]
 
        [:button {:class "btn btn-warning w-1/2 mx-auto"
                  :on-click #(re-frame/dispatch [::events/publish-resource {:name (:name @s) ;; TODO this should be sth like build event
@@ -413,7 +414,8 @@
 
 ;; Header
 (defn new-header []
-  (let [selected-events @(re-frame/subscribe [::subs/selected-events])]
+  (let [selected-events @(re-frame/subscribe [::subs/selected-events])
+        pk @(re-frame/subscribe [::subs/pk])]
     [:div
      {:class "navbar sticky z-50 top-0 left-0 bg-base-100"}
      [:div
@@ -426,9 +428,11 @@
      [:div
       {:class "flex-none"}
 
-      [:a {:class "btn btn-circle btn-primary"
+      [:a {:disabled (nil? pk)
+           :class "btn btn-circle btn-primary"
            :on-click #(re-frame/dispatch [::events/navigate [:add-resource]])} "+"]
-      [shopping-cart]
+      (when (not (nil? pk))
+        [shopping-cart])
       [user-menu]]]))
 
 ;; Keys Panel

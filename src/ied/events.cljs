@@ -198,9 +198,13 @@
                          :content ""
                          :tags [["d" (:id resource)]
                                 ["id" (:id resource)]
-                                ["author" "" (:author resource)]
+                                #_["author" "" (:author resource)]
                                 ["name" (:name resource)]]}]
-              {::sign-and-publish-event [event (-> cofx :db :sk)]})))
+              {:navigate [:home]
+               ::sign-and-publish-event [event (-> cofx :db :sk)]
+               }
+
+              #_{::sign-and-publish-event [event (-> cofx :db :sk)]})))
 
 ;; TODO maybe we need some validation before publishing
 (re-frame/reg-fx
