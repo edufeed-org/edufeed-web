@@ -113,20 +113,20 @@
      {:class "animate-flyIn card bg-base-100 w-96 shadow-xl min-h-[620px]"}
      [:div {:class "relative"}
       [:div {:class "absolute w-12 h-12 right-12 -bottom-4 rounded-full bg-white"}
-
        (cond
          (= 30004 (:kind event)) [layer-icon]
          (= 30142 (:kind event)) [file-icon])]
       [:figure
        [:img
         {:class "h-48 object-cover"
+         :loading "lazy"
          :src
          (nostr/get-image-from-metadata-event event)
          :alt ""}]]]
      [:div
       {:class "card-body"}
       [:a {:href (nostr/get-d-id-from-event event)
-           :class "card-title hover:underline"}
+           :class "card-title hover:underline truncate"}
        (nostr/get-name-from-metadata-event event)]
       (doall
        (for [about (nostr/get-about-names-from-metadata-event event)]
@@ -152,7 +152,7 @@
 (defn events-panel []
   (let [events @(re-frame/subscribe  [::subs/feed-events])
         selected-events @(re-frame/subscribe  [::subs/selected-events])]
-    [:div {:class "border-2 rounded"}
+    [:div {:class ""}
      [:p (str "Num of events: " (count events))]
      (if (> (count events) 0)
        [:div {:class "flex flex-wrap justify-center gap-2"}
@@ -415,7 +415,7 @@
 (defn new-header []
   (let [selected-events @(re-frame/subscribe [::subs/selected-events])]
     [:div
-     {:class "navbar bg-base-100"}
+     {:class "navbar sticky z-50 top-0 left-0 bg-base-100"}
      [:div
       {:class "flex-1"}
       [:a {:class "btn btn-ghost text-xl"
@@ -537,9 +537,9 @@
 ;; main
 (defn main-panel []
   (let [active-panel (re-frame/subscribe [::subs/active-panel])]
-    [:div
+    [:div {:class "relative"}
      [new-header]
-     [:div
+     [:div {:class ""}
       (routes/panels @active-panel)
       [add-to-lists-modal]
       [create-list-modal]
