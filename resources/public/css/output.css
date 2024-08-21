@@ -3007,3 +3007,9 @@ details.collapse summary::-webkit-details-marker {
 .hover\:underline:hover {
   text-decoration-line: underline;
 }
+
+@media (min-width: 640px) {
+  .sm\:w-1\/2 {
+    width: 50%;
+  }
+}

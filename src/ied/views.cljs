@@ -47,18 +47,18 @@
         "Name"
         [:input {:on-change (fn [e]
                               (swap! s assoc :name (-> e .-target .-value)))
-                 :type "text", :class "grow", :placeholder "Daisy"}]]
+                 :type "text", :class "grow", :placeholder "Best Resource Ever"}]]
        [:label
         {:class "input input-bordered flex items-center gap-2"}
         "URL"
         [:input {:on-change (fn [e]
                               (swap! s assoc :uri (-> e .-target .-value)))
-                 :type "text", :class "grow", :placeholder "daisy@site.com"}]]
+                 :type "text", :class "grow", :placeholder "https://wirlernenonline.de/r31"}]]
        [:label
         {:class "input input-bordered flex items-center gap-2"}
         [:input {:on-change (fn [e]
                               (swap! s assoc :author (-> e .-target .-value)))
-                 :type "text", :class "grow", :placeholder "Author"}]]
+                 :type "text", :class "grow", :placeholder "Robbi"}]]
 
        [:button {:class "btn btn-warning w-1/2 mx-auto"
                  :on-click #(re-frame/dispatch [::events/publish-resource {:name (:name @s) ;; TODO this should be sth like build event
@@ -444,7 +444,7 @@
 ;; Add Resource Panel
 (defn add-resource-panel []
   [:div
-   {:class "w-1/2 mx-auto flex flex-col space-y-4"}
+   {:class "sm:w-1/2 p-2 mx-auto flex flex-col space-y-4"}
    [add-resource-form]
    [:div
     {:tabIndex "0",
