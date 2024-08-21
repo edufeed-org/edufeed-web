@@ -8,6 +8,28 @@
    [ied.nostr :as nostr]
    [reagent.core :as reagent]))
 
+(defn layer-icon []
+  [:svg
+   {:class "MuiSvgIcon-root MuiSvgIcon-fontSizeMedium css-m9simb",
+    :focusable "false",
+    :aria-hidden "true",
+    :viewBox "0 0 24 24",
+    :data-testid "LayersIcon"}
+   [:path
+    {:d
+     "m11.99 18.54-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27z"}]])
+
+(defn file-icon []
+  [:svg
+   {:class "MuiSvgIcon-root MuiSvgIcon-fontSizeMedium css-m9simb",
+    :focusable "false",
+    :aria-hidden "true",
+    :viewBox "0 0 24 24",
+    :data-testid "InsertDriveFileIcon"}
+   [:path
+    {:d
+     "M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm7 7V3.5L18.5 9z"}]])
+
 ;; add resource form
 (defn add-resource-form
   [name uri author]
@@ -86,20 +108,21 @@
 
 ;; metadata event component
 (defn metadata-event-component [event]
-  (let [selected-events @(re-frame/subscribe  [::subs/selected-events])
-        visited-at @(re-frame/subscribe [::subs/visited-at])
-        now (quot (.now js/Date) 1000)
-        diff (- now visited-at)
-        _ () #_(when (>= diff 5)
-                 (re-frame/dispatch [::events/add-confetti]))]
+  (let [selected-events @(re-frame/subscribe  [::subs/selected-events])]
     [:div
      {:class "animate-flyIn card bg-base-100 w-96 shadow-xl min-h-[620px]"}
-     [:figure
-      [:img
-       {:class "h-48 object-cover"
-        :src
-        (nostr/get-image-from-metadata-event event)
-        :alt ""}]]
+     [:div {:class "relative"}
+      [:div {:class "absolute w-12 h-12 right-12 -bottom-4 rounded-full bg-white"}
+
+       (cond
+         (= 30004 (:kind event)) [layer-icon]
+         (= 30142 (:kind event)) [file-icon])]
+      [:figure
+       [:img
+        {:class "h-48 object-cover"
+         :src
+         (nostr/get-image-from-metadata-event event)
+         :alt ""}]]]
      [:div
       {:class "card-body"}
       [:a {:href (nostr/get-d-id-from-event event)
