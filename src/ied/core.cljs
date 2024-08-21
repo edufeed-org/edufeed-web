@@ -21,5 +21,6 @@
   (routes/start!)
   (re-frame/dispatch-sync [::events/initialize-db])
   (re-frame/dispatch [::events/connect-to-default-relays])
+  (re-frame/dispatch [::events/set-visit-timestamp])
   (dev-setup)
   (mount-root))

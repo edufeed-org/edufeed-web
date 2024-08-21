@@ -34,8 +34,9 @@
                 :value (:author @s)
                 :on-change (fn [e]
                              (swap! s assoc :author (-> e .-target .-value)))}]
-       [:button {:on-click #(re-frame/dispatch [::events/publish-resource {:name (:name @s) ;; TODO this should be sth like build event
-                                                                           :uri (:uri @s)
+       [:button {:class "btn btn-warning"
+                 :on-click #(re-frame/dispatch [::events/publish-resource {:name (:name @s) ;; TODO this should be sth like build event
+                                                                           :id (:uri @s)
                                                                            :author (:author @s)}])}
         "Publish Resource"]])))
 
@@ -49,6 +50,7 @@
                  :on-click #(re-frame/dispatch [::events/convert-amb-and-publish-as-nostr-event (:json-string @s)])}
         "Publish as Nostr Event"]])))
 
+;; TODO try again using xhrio
 (defn add-resosurce-by-uri []
   (let [uri (reagent/atom {:uri ""})]
     (fn []
@@ -78,9 +80,14 @@
 
 ;; metadata event component
 (defn metadata-event-component [event]
-  (let [selected-events @(re-frame/subscribe  [::subs/selected-events])]
+  (let [selected-events @(re-frame/subscribe  [::subs/selected-events])
+        visited-at @(re-frame/subscribe [::subs/visited-at])
+        now (quot (.now js/Date) 1000)
+        diff (- now visited-at)
+        _ (when (>= diff 5)
+            (re-frame/dispatch [::events/add-confetti]))]
     [:div
-     {:class "card bg-base-100 w-96 shadow-xl min-h-[620px]"}
+     {:class "animate-flyIn card bg-base-100 w-96 shadow-xl min-h-[620px]"}
      [:figure
       [:img
        {:class "h-48 object-cover"
@@ -114,17 +121,18 @@
 
 ;; events
 (defn events-panel []
-  (let [events @(re-frame/subscribe  [::subs/metadata-events])
-        selected-events @(re-frame/subscribe  [::subs/selected-events])
-        show-add-event (re-frame/subscribe [::subs/show-add-event])]
+  (let [events @(re-frame/subscribe  [::subs/feed-events])
+        selected-events @(re-frame/subscribe  [::subs/selected-events])]
     [:div {:class "border-2 rounded"}
      [:p (str "Num of events: " (count events))]
      (if (> (count events) 0)
        [:div {:class "flex flex-wrap justify-center gap-2"}
         (doall
-         (for [event events]
+
+         (for [event  events]
            [:div {:key (:id event)}
             [metadata-event-component event]]))]
+
        [:p "no events there"])
      [:button {:class "btn"
                :disabled (not (boolean (seq selected-events)))
@@ -136,9 +144,11 @@
 ;; event feed component
 (defn event-feed-component [event]
   (let [_ () #_(re-frame/dispatch [::events/add-confetti])]
-   [:div
+    [:div
      {:class "animate-flyIn card bg-base-100 w-64 h-64 shadow-xl border border-white border-w "}
-     [:p (:kind event)]
+     (cond
+       (= 30004 (:kind event)) [:p {:class "text-2xl float-right"} "📖"]
+       (= 30142 (:kind event)) [:p {:class "text-2xl float-right"} "📚"])
      [:figure
       [:img
        {:class "h-48 object-contain"
@@ -346,9 +356,9 @@
         [:div
          {:class "w-10 rounded-full"}
          [:img
-          {:alt "Tailwind CSS Navbar component",
+          {:alt "user image",
            :src
-           "https://img.daisyui.com/images/stock/photo-1534528741775-53994a69daeb.webp"}]]]
+           (str "https://robohash.org/" pk)}]]]
        [:ul
         {:tabIndex "0",
          :class
@@ -382,12 +392,12 @@
       [:a {:class "btn btn-ghost text-xl"
            :on-click #(re-frame/dispatch [::events/navigate [:home]])}
        "edufeed"]
-      [:a {:class "btn btn-circle"
-           :on-click #(re-frame/dispatch [::events/navigate [:event-feed]])} "Event-Feed"]]
+      #_[:a {:class "btn btn-circle"
+             :on-click #(re-frame/dispatch [::events/navigate [:event-feed]])} "Event-Feed"]]
      [:div
       {:class "flex-none"}
 
-      [:a {:class "btn btn-circle"
+      [:a {:class "btn btn-circle btn-primary"
            :on-click #(re-frame/dispatch [::events/navigate [:add-resource]])} "+"]
       [shopping-cart]
       [user-menu]]]))

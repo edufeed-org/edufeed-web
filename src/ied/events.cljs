@@ -24,7 +24,8 @@
 (re-frame/reg-event-fx
  ::navigate
  (fn-traced [_ [_ handler]]
-            {:navigate handler}))
+            {:dispatch [::set-visit-timestamp]
+             :navigate handler}))
 
 (re-frame/reg-event-fx
  ::set-active-panel
@@ -194,8 +195,10 @@
                          :created_at (:now cofx)
                          :content ""
                          :tags [["d" (:id resource)]
-                                ["author" "" (:author resource)]]}]
-              {::sign-and-publish-event [event (:sk cofx)]})))
+                                ["id" (:id resource)]
+                                ["author" "" (:author resource)]
+                                ["name" (:name resource)]]}]
+              {::sign-and-publish-event [event (-> cofx :db :sk)]})))
 
 ;; TODO maybe we need some validation before publishing
 (re-frame/reg-fx
@@ -452,5 +455,13 @@
  ::add-confetti
  (fn [_ _]
    (let [confetti-instance (new jsConfetti)]
-     (.addConfetti confetti-instance))
+     (.addConfetti confetti-instance (clj->js {:emojis ["😺" "🐈‍⬛" "🦄"]})))
    {}))
+
+(re-frame/reg-event-fx
+ ::set-visit-timestamp
+ [(re-frame/inject-cofx  :now)]
+ (fn [cofx [_]]
+   {:db (assoc (:db cofx) :visited-at (:now cofx))}))
+
+

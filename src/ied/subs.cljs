@@ -208,3 +208,8 @@
  ::events-in-list
  (fn [db [_ event-ids]]
    (filter (fn [e] (contains? event-ids (:id e))) (:events db))))
+
+(re-frame/reg-sub
+  ::visited-at
+  (fn [db _]
+    (:visited-at db)))
