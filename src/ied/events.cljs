@@ -311,7 +311,7 @@
                 :created_at (:now cofx)
                 :content ""
                 :tags new-tags}]
-     {::sign-and-publish-event [event (:sk cofx)]})))
+     {::sign-and-publish-event [event (-> cofx :db :sk)]})))
 
 (re-frame/reg-event-fx
  ::add-metadata-events-to-lists
@@ -383,7 +383,7 @@
                             :created_at (:now cofx)
                             :content ""
                             :tags tags}]
-     {::sign-and-publish-event [create-list-event (:sk cofx)]})))
+     {::sign-and-publish-event [create-list-event (-> cofx :db :sk)]})))
 
 (re-frame/reg-event-fx
  ::delete-list
@@ -399,7 +399,7 @@
                                   ["a" (str (:kind l) ":" (:pubkey l) ":" (second (first (filter
                                                                                           #(= "d" (first %))
                                                                                           (:tags l)))))])]}]
-     {::sign-and-publish-event [deletion-event (:sk cofx)]})))
+     {::sign-and-publish-event [deletion-event (-> cofx :db :sk)]})))
 
 (re-frame/reg-event-db
  ::toggle-show-lists-modal
@@ -429,7 +429,7 @@
                 :created_at (:now cofx)
                 :content ""
                 :tags filtered-tags}]
-     {::sign-and-publish-event [event (:sk cofx)]})))
+     {::sign-and-publish-event [event (-> cofx :db :sk)]})))
 
 (re-frame/reg-event-db
  ::create-sk
