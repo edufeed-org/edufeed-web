@@ -15,7 +15,8 @@
                          :uri uri
                          :author author})]
     (fn []
-      [:form  {:on-submit (fn [e]
+      [:form  {:class "flex flex-col space-y-4"
+               :on-submit (fn [e]
                             (.preventDefault e)
                             ;; do something with the state @s
                             )}
@@ -46,12 +47,14 @@
 (defn add-resource-by-json []
   (let [s (reagent/atom {:json-string ""})]
     (fn []
-      [:form {:on-submit (fn [e] (.preventDefault e))}
-       [:textarea {:on-change (fn [e]
-                                (swap! s assoc :json-string (-> e .-target .-value)))}]
-       [:button {:class "btn btn-warning"
-                 :on-click #(re-frame/dispatch [::events/convert-amb-and-publish-as-nostr-event (:json-string @s)])}
-        "Publish as Nostr Event"]])))
+      [:div
+       [:p "Paste an AMB object"]
+       [:form {:on-submit (fn [e] (.preventDefault e))}
+        [:textarea {:on-change (fn [e]
+                                 (swap! s assoc :json-string (-> e .-target .-value)))}]
+        [:button {:class "btn btn-warning"
+                  :on-click #(re-frame/dispatch [::events/convert-amb-and-publish-as-nostr-event (:json-string @s)])}
+         "Publish as Nostr Event"]]])))
 
 ;; TODO try again using xhrio
 (defn add-resosurce-by-uri []
@@ -425,11 +428,11 @@
      :class "collapse collapse-arrow border-base-300 bg-base-200 border"}
     [:div
      {:class "collapse-title text-xl font-medium"}
-     "Focus me to see content"]
+     "Advanced Options"]
     [:div
      {:class "collapse-content"}
      [add-resource-by-json]
-     [add-resosurce-by-uri]]]])
+     #_[add-resosurce-by-uri]]]])
 
 (defmethod routes/panels :add-resource-panel [] [add-resource-panel])
 

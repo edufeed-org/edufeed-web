@@ -115,8 +115,8 @@
                                  #_(d-id-not-in-deleted-list-ids (get-d-id-from-tags (:tags %)) deleted-lists))
                            events)
          most-recent-lists (most-recent-by-d-tag all-lists)]
-     (.log js/console "all lists: " (clj->js all-lists))
-     (.log js/console "most recent lists: " (clj->js most-recent-lists))
+     #_(.log js/console "all lists: " (clj->js all-lists))
+     #_(.log js/console "most recent lists: " (clj->js most-recent-lists))
      most-recent-lists)))
 
 (re-frame/reg-sub
