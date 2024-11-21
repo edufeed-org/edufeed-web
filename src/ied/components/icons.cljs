@@ -61,3 +61,55 @@
    [:path
     {:d
      "M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"}]])
+
+(defn layer-icon []
+  [:svg
+   {:class "MuiSvgIcon-root MuiSvgIcon-fontSizeMedium css-m9simb",
+    :focusable "false",
+    :aria-hidden "true",
+    :viewBox "0 0 24 24",
+    :data-testid "LayersIcon"}
+   [:path
+    {:d
+     "m11.99 18.54-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27z"}]])
+
+(defn file-icon []
+  [:svg
+   {:class "MuiSvgIcon-root MuiSvgIcon-fontSizeMedium css-m9simb",
+    :focusable "false",
+    :aria-hidden "true",
+    :viewBox "0 0 24 24",
+    :data-testid "InsertDriveFileIcon"}
+   [:path
+    {:d
+     "M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm7 7V3.5L18.5 9z"}]])
+
+;; checkmark
+(defn checkmark []
+  [:svg
+   {:version "1.1",
+    :class "fa-icon ml-auto mr-2 svelte-1mc5hvj",
+    :width "16",
+    :height "16",
+    :aria-label "",
+    :role "presentation",
+    :viewBox "0 0 1792 1792",
+    ; :style "color: black;"
+    }
+   [:path
+    {:d
+     "M1671 566q0 40-28 68l-724 724-136 136q-28 28-68 28t-68-28l-136-136-362-362q-28-28-28-68t28-68l136-136q28-28 68-28t68 28l294 295 656-657q28-28 68-28t68 28l136 136q28 28 28 68z"}]])
+
+(defn shopping-cart []
+  [:svg
+   {:xmlns "http://www.w3.org/2000/svg",
+    :class "h-5 w-5",
+    :fill "none",
+    :viewBox "0 0 24 24",
+    :stroke "currentColor"}
+   [:path
+    {:stroke-linecap "round",
+     :stroke-linejoin "round",
+     :stroke-width "2",
+     :d
+     "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"}]])

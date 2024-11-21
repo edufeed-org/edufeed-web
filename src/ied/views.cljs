@@ -6,6 +6,7 @@
    [ied.routes :as routes]
    [ied.subs :as subs]
    [ied.nostr :as nostr]
+   [ied.components.icons :as icons]
    [ied.opencard.views :as opencard]
    [ied.views.search :as search]
    [ied.views.resource :as resource]
@@ -13,27 +14,6 @@
    [ied.components.resource :as resource-component]
    [reagent.core :as reagent]))
 
-(defn layer-icon []
-  [:svg
-   {:class "MuiSvgIcon-root MuiSvgIcon-fontSizeMedium css-m9simb",
-    :focusable "false",
-    :aria-hidden "true",
-    :viewBox "0 0 24 24",
-    :data-testid "LayersIcon"}
-   [:path
-    {:d
-     "m11.99 18.54-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27z"}]])
-
-(defn file-icon []
-  [:svg
-   {:class "MuiSvgIcon-root MuiSvgIcon-fontSizeMedium css-m9simb",
-    :focusable "false",
-    :aria-hidden "true",
-    :viewBox "0 0 24 24",
-    :data-testid "InsertDriveFileIcon"}
-   [:path
-    {:d
-     "M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm7 7V3.5L18.5 9z"}]])
 
 ;; event data modal
 (defn event-data-modal []
@@ -60,8 +40,8 @@
        [:div {:class "flex flex-row gap-2 "}
         [:div {:class "w-6 h-6 rounded-full bg-white"}
          (cond
-           (= 30004 (:kind event)) [layer-icon]
-           (= 30142 (:kind event)) [file-icon])]
+           (= 30004 (:kind event)) [icons/layer-icon]
+           (= 30142 (:kind event)) [icons/file-icon])]
         [:a {:href (nostr/get-d-id-from-event event)
              :class "font-bold hover:underline text-ellipsis overflow-hidden"}
          (nostr/get-name-from-metadata-event event)]]
@@ -215,21 +195,6 @@
        ;(re-frame/dispatch [::events/connect-to-default-relays])
        )]))
 
-;; checkmark
-(defn checkmark []
-  [:svg
-   {:version "1.1",
-    :class "fa-icon ml-auto mr-2 svelte-1mc5hvj",
-    :width "16",
-    :height "16",
-    :aria-label "",
-    :role "presentation",
-    :viewBox "0 0 1792 1792",
-    ; :style "color: black;"
-    }
-   [:path
-    {:d
-     "M1671 566q0 40-28 68l-724 724-136 136q-28 28-68 28t-68-28l-136-136-362-362q-28-28-28-68t28-68l136-136q28-28 68-28t68 28l294 295 656-657q28-28 68-28t68 28l136 136q28 28 28 68z"}]])
 
 ;; Add to lists modal
 (defn create-list-modal []
@@ -282,7 +247,7 @@
               [:p {:class "text-xl font-bold"}
                (nostr/get-list-name l)]
               (when in-selected-lists
-                [checkmark])])))
+                [icons/checkmark])])))
         [:div {:class "flex flex-row"}
          [:button {:on-click #(re-frame/dispatch [::events/add-metadata-events-to-lists [selected-metadata-events selected-lists]])
                    :class "btn"}
@@ -305,18 +270,7 @@
       {:tabIndex "0", :role "button", :class "btn btn-ghost btn-circle"}
       [:div
        {:class "indicator"}
-       [:svg
-        {:xmlns "http://www.w3.org/2000/svg",
-         :class "h-5 w-5",
-         :fill "none",
-         :viewBox "0 0 24 24",
-         :stroke "currentColor"}
-        [:path
-         {:stroke-linecap "round",
-          :stroke-linejoin "round",
-          :stroke-width "2",
-          :d
-          "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"}]]
+      [icons/shopping-cart ] 
        [:span {:class "badge badge-sm indicator-item"} (count selected-events)]]]
      [:div
       {:tabIndex "0",
