@@ -80,21 +80,29 @@
          :about {:type :skos
                  :schemes ["https://w3id.org/kim/hochschulfaechersystematik/scheme"]}}})
 
+(defn concept-checkbox [concept field toggled]
+  [:input {:type "checkbox"
+           :checked (or toggled false)
+           :class "checkbox checkbox-warning"
+           :on-change (fn [] (re-frame/dispatch [::events/toggle-concept [concept field]]))}])
+
 (defn concept-label-component
   [[concept  field]]
   (fn []
     (let [toggled-concepts @(re-frame/subscribe [::subs/toggled-concepts])
           toggled (some #(= (:id %) (:id concept)) toggled-concepts)]
-      [:div {:class ""} 
-       [:p
-        {:class (str "hover:bg-base-200 cursor-pointer" (when toggled " bg-white"))
-         :on-click (fn []
-                     (re-frame/dispatch [::events/toggle-concept [concept field]]))}
-        (-> concept :prefLabel :de)]
-       (when-let [narrower (:narrower concept)]
-         [:div {:class "pl-2 "}
-          (for [child narrower]
-            ^{:key (:id child)} [concept-label-component [child field]])])])))
+      [:li
+       (if-let [narrower (:narrower concept)]
+         [:details {:open false}
+          [:summary {:class (when toggled "bg-orange-400 text-black")}
+           [concept-checkbox concept field toggled]
+           (-> concept :prefLabel :de)]
+          [:ul {:tabindex "0"}
+           (for [child narrower]
+             ^{:key (:id child)} [concept-label-component [child field]])]]
+         [:a {:class (when toggled "bg-orange-400 text-black")}
+          [concept-checkbox concept field toggled]
+          [:p {:on-click (fn [] (re-frame/dispatch [::events/toggle-concept [concept field]])) } (-> concept :prefLabel :de)]])])))
 
 (defn skos-concept-scheme-multiselect-component
   [[cs field field-title]]
@@ -106,18 +114,12 @@
      :role "button"
      :class "btn m-1 grow w-full"}
     field-title]
-   [:div
-    {:tabIndex "0",
-     :class
-     "dropdown-content card card-compact bg-base-100 z-[1] w-64 p-2 shadow"}
-    [:div
-     {:class "card-body"}
-     [:h3 {:class "card-title"}
-      field-title]
+   [:div {:class "dropdown-content z-[1]"}
+    [:ul {:class "menu bg-base-200 rounded-box w-96 "
+          :tabindex "0"}
      (doall
       (for [concept (:hasTopConcept cs)]
-        ^{:key (:id concept)} [concept-label-component [concept field]]))
-     [:p "you can use any element as a dropdown."]]]])
+        ^{:key (:id concept)} [concept-label-component [concept field]]))]]])
 
 (defn array-fields-component [selected-md-scheme field field-title]
   (let [array-items-type (get-in selected-md-scheme [field :items :type])
