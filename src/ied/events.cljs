@@ -1,21 +1,21 @@
 (ns ied.events
   (:require
    [re-frame.core :as re-frame]
+   [ied.config :as config]
    [ied.db :as db]
    [day8.re-frame.tracing :refer-macros [fn-traced]]
-   [ied.subs :as subs]
    [ied.nostr :as nostr]
-
+   [day8.re-frame.http-fx]
    [promesa.core :as p]
    [wscljs.client :as ws]
    [wscljs.format :as fmt]
    [clojure.string :as str]
    [clojure.set :as set]
+   [superstructor.re-frame.fetch-fx]
+   [ajax.core :as ajax]
 
    ["js-confetti" :as jsConfetti]
    [js-confetti :as jsConfetti]))
-
-(def list-kinds [30001 30004])
 
 (re-frame/reg-event-db
  ::initialize-db
@@ -38,15 +38,37 @@
  (fn-traced [{:keys [db]} [_ route]]
             {:db (assoc db :route route)}))
 
+(def confetti-instance
+  (new jsConfetti))
+
+(re-frame/reg-fx
+ ::add-confetti
+ (fn [cofx _]
+   (let [visited-at (-> cofx :db :visited-at)
+         now (quot (.now js/Date) 1000)
+         diff (- now visited-at)]
+     (when (-> cofx :db :confetti)
+       (when (>= diff 5)
+         (.addConfetti confetti-instance (clj->js {:emojis ["😺" "🐈‍⬛" "🦄"]}))))
+     {})))
+
+(re-frame/reg-fx
+ ::relay-list
+ (fn [event]
+   (when (= 30002 (:kind event))
+     (.log js/console "got a relay list!"))))
+
 ;; Database Event?
 (re-frame/reg-event-fx
  ::save-event
  ;; TODO if EOSE retrieved end connection identified by uri
  (fn-traced [{:keys [db]} [_ [uri raw-event]]]
             (let [event (nth raw-event 2 raw-event)]
+
               (when (and
                      (= (first raw-event) "EVENT"))
-                {:dispatch [::add-confetti]
+                {:fx [[::add-confetti]
+                      [::relay-list event]]
                  :db (update db :events conj event)}))))
 
 (defn handlers
@@ -72,15 +94,14 @@
 (re-frame/reg-event-fx
  ::load-events
  (fn-traced [cofx [_ ws-uri]]
-            {::load-events-fx ws-uri}))
+            {::load-events-fx [ws-uri (-> cofx :db :sockets)]}))
 
 (re-frame/reg-fx
  ::load-events-fx
- (fn [ws-uri]
+ (fn [[ws-uri sockets]]
    (println "loading events")
 
-   (let [sockets (re-frame/subscribe [::subs/sockets])
-         target-ws (first (filter #(= ws-uri (:uri %)) @sockets))]
+   (let [target-ws (first (filter #(= ws-uri (:uri %)) sockets))]
      (ws/send (:socket target-ws) ["REQ" "424242" {:kinds [30004 30142]
                                                    :limit 100}] fmt/json)
      ; (ws/close (:socket (first @sockets))) ;; should be handled otherwise (?)
@@ -115,13 +136,12 @@
 (re-frame/reg-event-fx
  ::connect-to-websocket
  (fn-traced [{:keys [db]} [_ ws-uri]]
-            {::connect-to-websocket-fx ws-uri}))
+            {::connect-to-websocket-fx [ws-uri (:sockets db)]}))
 
 (re-frame/reg-fx
  ::connect-to-websocket-fx
- (fn [ws-uri]
-   (let [sockets (re-frame/subscribe [::subs/sockets])
-         target-ws (first (filter #(= ws-uri (:uri %)) @sockets))]
+ (fn [[ws-uri sockets]]
+   (let [target-ws (first (filter #(= ws-uri (:uri %)) sockets))]
      (re-frame/dispatch [::create-websocket target-ws]))))
 
 ;; TODO use id to close socket
@@ -130,20 +150,18 @@
 (re-frame/reg-event-fx
  ::close-connection-to-websocket
  (fn-traced [{:keys [db]} [_ ws-uri]]
-            {::close-connection-to-websocket-fx ws-uri}))
+            {::close-connection-to-websocket-fx [ws-uri (:sockets db)]}))
 
 (re-frame/reg-fx
  ::close-connection-to-websocket-fx
- (fn [ws-uri]
-   (let [sockets (re-frame/subscribe [::subs/sockets])]
-     (ws/close (:socket (first (filter #(= ws-uri (:uri %)) @sockets))))
-     (re-frame/dispatch [::update-ws-connection-status ws-uri "disconnected"]))))
+ (fn [[ws-uri  sockets]]
+   (ws/close (:socket (first (filter #(= ws-uri (:uri %)) sockets))))
+   (re-frame/dispatch [::update-ws-connection-status ws-uri "disconnected"])))
 
 (re-frame/reg-event-fx
  ::connect-to-default-relays
- (fn-traced [cofx [_]]
-            (let [default-relays (re-frame/subscribe [::subs/default-relays])]
-              {::connect-to-default-relays-fx @default-relays})))
+ (fn-traced [cofx [_ default-relays]]
+            {::connect-to-default-relays-fx default-relays}))
 
 (re-frame/reg-fx
  ::connect-to-default-relays-fx
@@ -154,9 +172,14 @@
 
 ;; TODO 
 (re-frame/reg-event-fx
- ::send-to-relays
+ ::publish-signed-event
  (fn-traced [cofx [_ signedEvent]]
-            (let [sockets (-> cofx :db :sockets)]
+            (let [sockets (filter
+                           (fn [s]
+                             (some #(= "outbox"  %)
+                                   (:type s)))
+                           (-> cofx :db :sockets))
+                  _ (.log js/console "available sockets " (clj->js sockets))]
               {::send-to-relays-fx [sockets signedEvent]})))
 
 (re-frame/reg-fx
@@ -174,13 +197,12 @@
 (re-frame/reg-event-fx
  ::remove-websocket
  (fn-traced [{:keys [db]} [_ socket]]
-            {::remove-websocket-fx (:id socket)}))
+            {::remove-websocket-fx [(:id socket) (:sockets db)]}))
 
 (re-frame/reg-fx
  ::remove-websocket-fx
- (fn [id]
-   (let [sockets (re-frame/subscribe [::subs/sockets])
-         filtered (filter #(not= id (:id %)) @sockets)] ;; TODO maybe this can also be done using the URI
+ (fn [[id sockets]]
+   (let [filtered (filter #(not= id (:id %)) sockets)] ;; TODO maybe this can also be done using the URI
      (re-frame/dispatch [::update-websockets filtered]))))
 
 (re-frame/reg-event-db
@@ -192,34 +214,48 @@
 (re-frame/reg-event-fx
  ::publish-resource
  [(re-frame/inject-cofx  :now)]
- (fn-traced [cofx [_ resource]]
-            (let [event {:kind 30142
+ (fn-traced [cofx _]
+            ;; TODO hier muss ich den ansatz ändern, es ist vmtl sinnvoller durch alle keys in md-form-resource zu iterieren und abhängig davon die tags zu bauen
+            ;; -> vllt kann ich einfach eine Funktion bauen, die md-form resource amb-konform verwandet und dann die funktion zur publikation von amb daten recyclen
+            (let [form-data (-> cofx :db :md-form-resource)
+                  about (map (fn [e] ["about"
+                                      (:id e)
+                                      (second (first (filter (fn [l]
+                                                               (= :de (first l)))
+                                                             (:prefLabel e))))
+                                      "de"])
+                             (:about form-data)) ;; TODO this should be abstracted in a nostr-make-event-kind-function or sth
+                  tags [["d" (:uri form-data)]
+                        ["id" (:uri form-data)]
+                        ["author" "" (:author form-data)]
+                        ["name" (:name form-data)]]
+                  event {:kind 30142
                          :created_at (:now cofx)
                          :content ""
-                         :tags [["d" (:id resource)]
-                                ["id" (:id resource)]
-                                #_["author" "" (:author resource)]
-                                ["name" (:name resource)]]}]
+                         :tags (into tags about)}
+                  _ (.log js/console "Event to publish " (clj->js event))]
               {:navigate [:home]
                ::sign-and-publish-event [event (-> cofx :db :sk)]
-               }
+               :db (assoc (:db cofx) :md-form-resource nil)})))
 
-              #_{::sign-and-publish-event [event (-> cofx :db :sk)]})))
+(defn sign-event [unsignedEvent sk]
+  (if (nostr/valid-unsigned-nostr-event? unsignedEvent)
+    (p/let [_ (js/console.log (clj->js unsignedEvent))
+            signedEvent (if (nil? sk)
+                          (.nostr.signEvent js/window (clj->js unsignedEvent))
+                          (nostr/finalize-event unsignedEvent sk))
+            _ (js/console.log "Signed event: " (clj->js signedEvent))]
+      signedEvent)
+    (.error js/console "Event is not a valid nostr event: " (clj->js unsignedEvent))))
 
 ;; TODO maybe we need some validation before publishing
 (re-frame/reg-fx
  ::sign-and-publish-event
  (fn [[unsignedEvent sk]]
-   (if (nostr/valid-unsigned-nostr-event? unsignedEvent)
-     (p/let [_ (js/console.log (clj->js unsignedEvent))
-             _ (js/console.log (nostr/sk-as-hex sk))
-             signedEvent (if (nil? sk)
-                           (.nostr.signEvent js/window (clj->js unsignedEvent))
-                           (nostr/finalize-event unsignedEvent sk))
-             _ (js/console.log "Signed event: " (clj->js signedEvent))]
-       (re-frame/dispatch [::send-to-relays signedEvent]))
-     (.error js/console "Event is not a valid nostr event: " (clj->js unsignedEvent)))))
+   (p/let [signedEvent (sign-event unsignedEvent sk)]
+     (re-frame/dispatch [::publish-signed-event signedEvent]))))
 
+;; TODO make login a multimethod and call it with either extension or anononymslouy keyword?
 (re-frame/reg-event-fx
  ::login-with-extension
  (fn-traced [cofx [_ _]]
@@ -229,7 +265,8 @@
  ::login-with-extension-fx
  (fn [db _]
    (p/let [pk (.nostr.getPublicKey js/window)]
-     (re-frame/dispatch [::save-pk pk]))))
+     (re-frame/dispatch [::save-pk pk])
+     (re-frame/dispatch [::relay-list-for-pk pk]))))
 
 (re-frame/reg-event-fx
  ::save-pk
@@ -258,27 +295,41 @@
    (assoc cofx :pk (:pk cofx))))
 
 (defn convert-amb-to-nostr-event
-  [json-string created_at]
-  (let [parsed-json (js->clj (js/JSON.parse json-string) :keywordize-keys true)
-        tags (into [["d" (:id parsed-json)]
+  [parsed-json created_at]
+  (let [tags (into [["d" (:id parsed-json)]
                     ["r" (:id parsed-json)]
                     ["id" (:id parsed-json)]
                     ["name" (:name parsed-json)]
                     ["description" (:description parsed-json "")]
+                    (into ["keywords"] (:keywords parsed-json))
                     ["image" (:image parsed-json "")]]
-                   cat [(map (fn [e] ["about" (:id e) (-> e :prefLabel :de)]) (:about parsed-json))
+                   cat [(map (fn [e] ["about" (:id e) (-> e :prefLabel :de) "de"]) (:about parsed-json)) ;; TODO fix the language parsing and make it generic
+                        (map (fn [e] ["creator"
+                                      (if-let [id  (get e :id)]
+                                        id
+                                        "")
+                                      (:name e)])
+                             (:creator parsed-json))
                         (map (fn [e] ["inLanguage" e]) (:inLanguage parsed-json))])
         event {:kind 30142
                :created_at created_at
-               :content "Added AMB Resource with d-tag"
+               :content ""
                :tags tags}]
     event))
 
 (re-frame/reg-event-fx
- ::convert-amb-and-publish-as-nostr-event
+ ::convert-amb-string-and-publish-as-nostr-event
  [(re-frame/inject-cofx  :now)]
  (fn-traced [cofx [_ json-string]]
-            (let [event (convert-amb-to-nostr-event json-string (:now cofx))]
+            (let [parsed-json (js->clj (js/JSON.parse json-string) :keywordize-keys true)
+                  event (convert-amb-to-nostr-event parsed-json (:now cofx))]
+              {::sign-and-publish-event [event (-> cofx :db :sk)]})))
+
+(re-frame/reg-event-fx
+ ::convert-amb-json-and-publish-as-nostr-event
+ [(re-frame/inject-cofx  :now)]
+ (fn-traced [cofx [_ json]]
+            (let [event (convert-amb-to-nostr-event json (:now cofx))]
               {::sign-and-publish-event [event (-> cofx :db :sk)]})))
 
 (re-frame/reg-event-fx
@@ -308,7 +359,7 @@
          tags-to-add (filter #(not (contains? existing-tags-set %))
                              (map (fn [e] (cond
                                             (= 1 (:kind e)) ["e" (:id e)]
-                                            (= 30142 (:kind e)) (nostr/build-kind-30142-tag e)))
+                                            (= 30142 (:kind e)) (nostr/build-tag-for-adressable-event e)))
                                   resources-to-add))
          new-tags (vec (concat existing-tags tags-to-add))
          event {:kind 30004
@@ -337,10 +388,31 @@
    (let [query-for-lists ["REQ"
                           (make-sub-id "lists-" npub) ;; TODO maybe make this more explicit later
                           {:authors [(nostr/get-pk-from-npub npub)]
-                           :kinds list-kinds}]
+                           :kinds (concat (:follow-sets db) (:list-kinds db))}]
          sockets (:sockets db)]
      {::request-from-relay [sockets query-for-lists]
       :dispatch [::get-deleted-lists-for-npub [sockets npub]]})))
+
+(re-frame/reg-event-fx
+ ::relay-list-for-pk
+ (fn [{:keys [db]} [_ pk]]
+   (.log js/console "get relay list for pk" pk)
+   (let [query-for-relay-list ["REQ"
+                               (make-sub-id "relay-lists-" pk) ;; TODO maybe make this more explicit later
+                               {:authors [pk]
+                                :kinds [30002]}]
+         sockets (:sockets db)]
+     {::request-from-relay [sockets query-for-relay-list]})))
+
+(re-frame/reg-event-fx
+ ::get-follow-set-for-npub
+ (fn [{:keys [db]} [_ npub]]
+   (let [query-for-lists ["REQ"
+                          (make-sub-id "follow-set-" npub) ;; TODO maybe make this more explicit later
+                          {:authors [(nostr/get-pk-from-npub npub)]
+                           :kinds (:follow-sets db)}]
+         sockets (:sockets db)]
+     {::request-from-relay [sockets query-for-lists]})))
 
 (re-frame/reg-event-fx
  ::get-deleted-lists-for-npub
@@ -351,7 +423,16 @@
                                    :kinds [5]}]]
      {::request-from-relay [sockets query-for-deleted-lists]})))
 
-(comment)
+(re-frame/reg-event-fx
+ ::events-from-pks-actor-follows
+ (fn [{:keys [db]} [_ pks]]
+   (.log js/console "requesting events from pks actor follows..")
+   (let [query-for-events ["REQ"
+                           (make-sub-id "events-from-pks-actor-follows" (:pk db))
+                           {:authors pks
+                            :kinds [1]
+                            :limit 10}]] ;; TODO remember timestamps and use them in query
+     {::request-from-relay [(:sockets db) query-for-events]})))
 
 (re-frame/reg-fx
  ::request-from-relay
@@ -374,32 +455,97 @@
       (str/replace #"\s" "-")
       (str/replace #"[^a-zA-Z0-9]" "-")))
 
-(comment
-  (cleanup-list-name "this is gönna be an awesüm+ l]st"))
-
 (re-frame/reg-event-fx
  ::create-new-list
  [(re-frame/inject-cofx  :now)]
  (fn [cofx [_ name]]
    (let [tags [["d" (cleanup-list-name name)]
-               ["name" name]]
+               ["title" name]]
          create-list-event {:kind 30004
                             :created_at (:now cofx)
                             :content ""
                             :tags tags}]
      {::sign-and-publish-event [create-list-event (-> cofx :db :sk)]})))
 
+;;;;;;;;;;;;;;;;;;;;;;;;
+;; Opencard stuff
+;;;;;;;;;;;;;;;;;;;;;;;;
+
+(re-frame/reg-event-fx
+ ::create-new-opencard-index
+ [(re-frame/inject-cofx  :now)]
+ (fn [cofx [_ name]]
+   (let [tags [["d" (cleanup-list-name name)]
+               ["title" name]]
+         create-opencard-index-event {:kind 30043
+                                      :created_at (:now cofx)
+                                      :content ""
+                                      :tags tags}]
+     {::sign-and-publish-event [create-opencard-index-event (-> cofx :db :sk)]})))
+
+;; create, sign, publish list event
+;; add signed list event to opencard-index
+(re-frame/reg-event-fx
+ ::add-opencard-list-to-index
+ (fn [cofx [_ [name opencard-index-old]]]
+   (let [opencard-list {:kind 30044
+                        :created_at (:now cofx)
+                        :content ""
+                        :tags [["d" (cleanup-list-name name)]
+                               ["title" name]]}
+         opencard-index (update opencard-index-old :created_at (:now cofx))]
+     {::add-opencard-list-to-index-fx [opencard-list opencard-index (-> cofx :db :sk)]})))
+
+(re-frame/reg-fx
+ ::add-opencard-list-to-index-fx
+ (fn [opencard-list opencard-index sk]
+   (p/let [opencard-list-signed (sign-event opencard-list sk)
+           opencard-index (update opencard-index :tags (fn [tags]
+                                                         (conj tags ["a" (nostr/build-tag-for-adressable-event opencard-list-signed)])))
+           opencard-index-signed (sign-event opencard-index sk)]
+     (re-frame/dispatch [::publish-signed-event opencard-list-signed])
+     (re-frame/dispatch [::publish-signed-event opencard-index-signed]))))
+
+(re-frame/reg-event-fx
+ ::remove-opencard-list-from-index
+ [(re-frame/inject-cofx  :now)]
+ (fn [cofx [_ opencard-list-to-delete opencard-index]]
+   (let [opencard-index-new {:kind 30043
+                             :created_at (:now cofx)
+                             :content ""
+                             :tags (filter #(not= (:id opencard-list-to-delete) (:id %)) (:tags opencard-index))}]
+     {::sign-and-publish-event [opencard-index-new (-> cofx :db :sk)]
+      ::delete-list [opencard-list-to-delete]})))
+
+;; TODO add 30045 opencard note to opencard-list
+(re-frame/reg-event-fx
+ ::add-opencard-note-to-list
+ [(re-frame/inject-cofx :now)]
+ (fn [cofx [_ [name content] opencard-list]]
+   (let [tags [["d" (cleanup-list-name name)]
+               ["title" name]] ;; TODO depending on the note content we might need to add more tags like references to other events and so on
+         opencard-note-event {:kind 30045
+                              :created_at (:now cofx)
+                              :content content
+                              :tags tags}]
+     {::sign-and-publish-event [opencard-note-event (-> cofx :db :sk)]})))
+
+;; TODO delete-opencard-index
+;; should we just remove the index or anything associated? maybe ask the user first
+
 (re-frame/reg-event-fx
  ::delete-list
  [(re-frame/inject-cofx  :now)]
  (fn [cofx [_ l]]
-   (let [deletion-event {:kind 5
+   (let [{:keys [list-kinds opencard-kinds]} (:db cofx)
+         all-list-kinds (concat list-kinds opencard-kinds)
+         deletion-event {:kind 5
                          :created_at (:now cofx)
                          :content ""
                          :tags [(cond
                                   (= 1 (:kind l))
                                   ["e" (:id l)]
-                                  (some #{(:kind l)} (-> cofx :db :list-kinds))
+                                  (some #{(:kind l)} all-list-kinds)
                                   ["a" (str (:kind l) ":" (:pubkey l) ":" (second (first (filter
                                                                                           #(= "d" (first %))
                                                                                           (:tags l)))))])]}]
@@ -448,27 +594,15 @@
    (p/let [raw-html (js/fetch  uri {:headers {"Access-Control-Allow-Origin" "*"}})]
      (println raw-html))))
 
-(comment
-  (p/->> (js/fetch "https://oersi.org/resources/aHR0cHM6Ly9lZ292LWNhbXB1cy5vcmcvY291cnNlcy9hcmJlaXRlbnVuZGZ1ZWhyZW5fdXBfMjAyMi0x")
-         (println)))
-
 (re-frame/reg-event-fx
  ::publish-amb-uri-as-nostr-event
  (fn [db [_ uri]]
-   {::get-amb-json-from-uri uri}))
-
-(def confetti-instance
-  (new jsConfetti))
-
-(re-frame/reg-event-fx
- ::add-confetti
- (fn [cofx _]
-   (let [visited-at (-> cofx :db :visited-at)
-         now (quot (.now js/Date) 1000)
-         diff (- now visited-at)]
-     (when (>= diff 5)
-       (.addConfetti confetti-instance (clj->js {:emojis ["😺" "🐈‍⬛" "🦄"]})))
-     {})))
+   {:http-xhrio {:method :get
+                 :uri uri
+                 :timeout 8000
+                 :response-format (ajax/json-response-format {:keywords? true})
+                 :on-success [::convert-amb-json-and-publish-as-nostr-event]
+                 :on-failure (.log js/console "publishing amb uri as nostr did not work")}}))
 
 (re-frame/reg-event-fx
  ::set-visit-timestamp
@@ -476,4 +610,207 @@
  (fn [cofx [_]]
    {:db (assoc (:db cofx) :visited-at (:now cofx))}))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Get metadata from uri ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn valid-uri? [s]
+  (try
+    (js/URL. s)
+    true
+    (catch :default e false)))
+
+(re-frame/reg-event-fx
+ ::try-get-metadata-from-uri
+ (fn [cofx [_ uri]]
+   (when (valid-uri? uri)
+     (println "valid uri" (valid-uri? uri))
+     {:dispatch [::get-metadata-from-json uri]})))
+
+(re-frame/reg-fx
+ ::try-get-metadata-from-uri-fx
+ (fn [uri]
+   (try
+     (println "trying to get metadata from json")
+     (re-frame/dispatch [::get-metadata-from-json uri])
+     (catch :default e
+       (println "... did not work..looking for script tag")
+       (try
+         (re-frame/dispatch [::get-metadata-from-script-tag uri])
+         (catch :default e
+           (js/console.error "all attempts to fetch something sensible failed.")))))))
+
+(re-frame/reg-event-db
+ ::prefill-metadata-form
+ (fn [db [_ uri data]]
+   (if (and
+        (:id data)
+        (:about data))
+     (assoc db :resource-to-add data)
+     (doall (js/console.error "Not the right kind of data")
+            (re-frame/dispatch [::get-metadata-from-script-tag uri])))))
+
+(re-frame/reg-event-fx
+ ::failure
+ (fn [cofx _]
+   (println "failure in xhrio request")))
+
+(re-frame/reg-event-db
+ ::parse-text-for-script-tag
+ (fn [db [_ uri data]]
+   (let [parser (js/DOMParser.)
+         doc (.parseFromString parser data "text/html")
+         script-tag (.querySelector doc "script[type='application/ld+json']")]
+     (if script-tag
+       (let [ld-json (js/JSON.parse (.-textContent script-tag))]
+         (assoc db :resource-to-add (js->clj ld-json)))
+       (println "did not get script tag")))))
+
+(re-frame/reg-event-fx
+ ::get-metadata-from-script-tag
+ (fn [cofx [_ uri]]
+   (println "now trying to get script tag..")
+   {:http-xhrio {:method :get
+                 :uri uri
+                 :timeout 3000
+                 :response-format (ajax/text-response-format)
+                 :on-success [::parse-text-for-script-tag uri]
+                 :on-failure [::failure]}}))
+
+(re-frame/reg-event-fx
+ ::get-metadata-from-json
+ (fn [cofx [_ uri]]
+   {:http-xhrio {:method :get
+                 :uri (if (str/ends-with? uri "json") ;; TODO elaborate this a bit more
+                        uri
+                        (str/replace uri #".html" ".json"))
+                 :timeout 3000
+                 :response-format (ajax/json-response-format {:keywords? true})
+                 :on-success [::prefill-metadata-form uri]
+                 :on-failure [::get-metadata-from-script-tag uri]}}))
+
+(re-frame/reg-event-db
+ ::save-concept-scheme
+ (fn [db [_ cs]]
+   (assoc-in db [:concept-schemes (:id cs)] cs)))
+
+(comment
+  (keyword "https://ww.googl-e.com/"))
+
+(defn jsonize-uri
+  [uri]
+  (cond
+    (str/ends-with? uri ".json")
+    uri
+    (str/ends-with? uri ".html")
+    (str/replace uri #"\.\w{4}" ".json")
+    :else
+    (str uri ".json")))
+
+(comment
+  (jsonize-uri "https:/goo"))
+
+(re-frame/reg-event-fx
+ ::skos-concept-scheme-from-uri
+ (fn [cofx [_ uri]]
+   {:http-xhrio {:method :get
+                 :uri (jsonize-uri uri)
+                 :timeout 5000
+                 :response-format (ajax/json-response-format {:keywords? true})
+                 :on-success [::save-concept-scheme]
+                 :on-failure [::failure]}}))
+
+(re-frame/reg-event-db
+ ::toggle-concept
+ (fn [db [_ [concept field]]]
+   (update-in db [:md-form-resource field] (fn [coll]
+                                             (if (some #(= (:id concept) (:id %)) coll)
+                                               (filter (fn [e] (not= (:id e) (:id concept))) coll)
+                                               (conj coll (select-keys concept [:id :notation :prefLabel] )))))))
+
+(re-frame/reg-event-db
+ ::handle-md-form-input
+ (fn [db [_ [field-name field-value]]]
+   (assoc-in db [:md-form-resource field-name] field-value)))
+
+(re-frame/reg-event-db
+ ::handle-md-form-array-input
+ (fn [db [_ [field-name field-id field-value]]]
+   (assoc-in db [:md-form-resource field-name field-id] field-value)))
+
+(re-frame/reg-event-db
+ ::handle-md-form-rm-input
+ (fn [db [_ [field-name field-id]]]
+   (update-in
+    db
+    [:md-form-resource field-name]
+    dissoc
+    field-id)))
+
+(re-frame/reg-event-db
+ ::handle-md-form-add-input
+ (fn [db [_ [field-name]]]
+   (assoc-in db [:md-form-resource field-name (random-uuid)] nil)))
+
+(re-frame/reg-event-fx
+ ::handle-search
+ (fn [cofx [_ search-term]]
+   (let [uri (str config/typesense-uri
+                  "search?q="
+                  search-term
+                  "&query_by="
+                  "name,about,description,creator")]
+     {:http-xhrio {:method :get
+                   :uri uri
+                   :headers {"x-typesense-api-key" "xyz"}
+                   :timeout 5000
+                   :response-format (ajax/json-response-format {:keywords? true})
+                   :on-success [::save-search-results]
+                   :on-failure [::failure]}})))
+
+(defn sanitize-filter-term [term]
+  (str/replace term #"[ ()]" " "))
+
+(re-frame/reg-event-fx
+ ::handle-filter-search
+ (fn [cofx [_ [filter-attribute filter-term]]]
+   (let [uri (str config/typesense-uri
+                  "search?q=*"
+                  "&query_by="
+                  "name"
+                  "&filter_by="
+                  filter-attribute
+                  ":="
+                  (sanitize-filter-term filter-term ))] ;; parantetheses seem to cause error when filtering
+     {:http-xhrio {:method :get
+                   :uri uri
+                   :headers {"x-typesense-api-key" "xyz"}
+                   :timeout 5000
+                   :response-format (ajax/json-response-format {:keywords? true})
+                   :on-success [::save-search-results]
+                   :on-failure [::failure]}})))
+
+(re-frame/reg-event-db
+ ::save-search-results
+ (fn [db [_ results]]
+   (let [raw-result-events (map #(-> % :document :event_raw) (:hits results))]
+     (-> db
+         (assoc  :search-results (:hits  results))
+         (update :events into raw-result-events)))))
+
+(re-frame/reg-event-fx
+ ::load-profile
+ (fn [cofx [_ pubkey]]
+   (let [sockets (filter #(= "connected" (:status %)) (-> cofx :db :sockets))
+         profile-request ["REQ"
+                          (make-sub-id "profile" pubkey)
+                          {:kinds [0]
+                           :authors [pubkey]
+                           :limit 10}]]
+     {::request-from-relay [sockets profile-request]})))
+
+(re-frame/reg-event-db
+ ::set-md-scheme
+ (fn [db [_ md-scheme]]
+   (assoc db :selected-md-scheme md-scheme)))
 

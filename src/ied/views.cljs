@@ -6,6 +6,11 @@
    [ied.routes :as routes]
    [ied.subs :as subs]
    [ied.nostr :as nostr]
+   [ied.opencard.views :as opencard]
+   [ied.views.search :as search]
+   [ied.views.resource :as resource]
+   [ied.views.add :as add]
+   [ied.components.resource :as resource-component]
    [reagent.core :as reagent]))
 
 (defn layer-icon []
@@ -30,68 +35,6 @@
     {:d
      "M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm7 7V3.5L18.5 9z"}]])
 
-;; add resource form
-(defn add-resource-form
-  [name uri author]
-  (let [s (reagent/atom {:name name
-                         :uri uri
-                         :author author})]
-    (fn []
-      [:form  {:class "flex flex-col space-y-4"
-               :on-submit (fn [e]
-                            (.preventDefault e)
-                            ;; do something with the state @s
-                            )}
-       [:label
-        {:class "input input-bordered flex items-center gap-2"}
-        "Name"
-        [:input {:on-change (fn [e]
-                              (swap! s assoc :name (-> e .-target .-value)))
-                 :type "text", :class "grow", :placeholder "Best Resource Ever"}]]
-       [:label
-        {:class "input input-bordered flex items-center gap-2"}
-        "URL"
-        [:input {:on-change (fn [e]
-                              (swap! s assoc :uri (-> e .-target .-value)))
-                 :type "text", :class "grow", :placeholder "https://wirlernenonline.de/r31"}]]
-       #_[:label
-          {:class "input input-bordered flex items-center gap-2"}
-          "Author"
-          [:input {:on-change (fn [e]
-                                (swap! s assoc :author (-> e .-target .-value)))
-                   :type "text", :class "grow", :placeholder "Robbi"}]]
-
-       [:button {:class "btn btn-warning w-1/2 mx-auto"
-                 :on-click #(re-frame/dispatch [::events/publish-resource {:name (:name @s) ;; TODO this should be sth like build event
-                                                                           :id (:uri @s)
-                                                                           :author (:author @s)}])}
-        "Publish Resource"]])))
-
-(defn add-resource-by-json []
-  (let [s (reagent/atom {:json-string ""})]
-    (fn []
-      [:div
-       [:p "Paste an AMB object"]
-       [:form {:on-submit (fn [e] (.preventDefault e))}
-        [:textarea {:on-change (fn [e]
-                                 (swap! s assoc :json-string (-> e .-target .-value)))}]
-        [:button {:class "btn btn-warning"
-                  :on-click #(re-frame/dispatch [::events/convert-amb-and-publish-as-nostr-event (:json-string @s)])}
-         "Publish as Nostr Event"]]])))
-
-;; TODO try again using xhrio
-(defn add-resosurce-by-uri []
-  (let [uri (reagent/atom {:uri ""})]
-    (fn []
-      [:form {:on-submit (fn [e] (.preventDefault e))}
-       [:label {:for "uri"} "URI: "]
-       [:input {:id "uri"
-                :on-change (fn [e]
-                             (swap! uri assoc :uri (-> e .-target .-value)))}]
-       [:button {:class "btn btn-warning"
-                 :on-click #(re-frame/dispatch [::events/publish-amb-uri-as-nostr-event (:uri @uri)])}
-        "Publish as Nostr Event"]])))
-
 ;; event data modal
 (defn event-data-modal []
   (let [visible? @(re-frame/subscribe [::subs/show-event-data-modal])
@@ -108,68 +51,83 @@
         [:button "close"]]])))
 
 ;; metadata event component
+;; TODO add author profile name and image
 (defn metadata-event-component [event]
   (let [selected-events @(re-frame/subscribe  [::subs/selected-events])]
-    [:div
-     {:class "animate-flyIn card bg-base-100 w-96 shadow-xl min-h-[620px]"}
-     [:div {:class "relative"}
-      [:div {:class "absolute w-12 h-12 right-12 -bottom-4 rounded-full bg-white"}
-       (cond
-         (= 30004 (:kind event)) [layer-icon]
-         (= 30142 (:kind event)) [file-icon])]
+    [:div {:class "flex flex-row gap-2"}
+     [:div {:class "w-3/4 p-2 min-h-full flex flex-col mt-2 justify-between"}
+      [:div {:class ""}
+       [:div {:class "flex flex-row gap-2 "}
+        [:div {:class "w-6 h-6 rounded-full bg-white"}
+         (cond
+           (= 30004 (:kind event)) [layer-icon]
+           (= 30142 (:kind event)) [file-icon])]
+        [:a {:href (nostr/get-d-id-from-event event)
+             :class "font-bold hover:underline text-ellipsis overflow-hidden"}
+         (nostr/get-name-from-metadata-event event)]]
+       [:div {:class "flex flex-wrap"}
+        (resource-component/about-tags  [event])]
+       [:p {:class "text-wrap"}
+        (nostr/get-description-from-metadata-event event)]]
+
+      [:div {:class "flex flex-row justify-between items-center"}
+       [:button {:class "btn"
+                 :on-click #(re-frame/dispatch [::events/toggle-show-event-data-modal event])} "Show Event Data"]
+       [:div
+        [:div {:class "form-control"}
+         [:label {:class "cursor-pointer label "}
+          [:span {:class "label-text m-2"} "Add to List "]
+          [:input
+           {:type "checkbox"
+            :checked (contains? (set (map #(:id %) selected-events)) (:id event))
+            :class "checkbox checkbox-success"
+            :on-change #(re-frame/dispatch [::events/toggle-selected-events event])}]]]]]]
+     [:div {:class "w-1/4"}
       [:figure
        [:img
-        {:class "h-48 object-cover"
+        {:class "h-48 object-cover mx-auto m-2"
          :loading "lazy"
          :src
          (nostr/get-image-from-metadata-event event)
-         :alt ""}]]]
-     [:div
-      {:class "card-body"}
-      [:a {:href (nostr/get-d-id-from-event event)
-           :class "card-title hover:underline truncate"}
-       (nostr/get-name-from-metadata-event event)]
-      (doall
-       (for [about (nostr/get-about-names-from-metadata-event event)]
-         [:div {:class "badge badge-primary m-1 truncate "
-                :key about} about]))
-      [:p {:class "break-all"}
-       (nostr/get-description-from-metadata-event event)]
-      [:button {:on-click #(re-frame/dispatch [::events/toggle-show-event-data-modal event])} "Show Event Data"]
-      [:div
-       {:class "card-actions justify-end"}
-       [:div
-        {:class "form-control"}
-        [:label
-         {:class "cursor-pointer label"}
-         [:span {:class "label-text"} ""]
-         [:input
-          {:type "checkbox"
-           :checked (contains? (set (map #(:id %) selected-events)) (:id event))
-           :class "checkbox checkbox-success"
-           :on-change #(re-frame/dispatch [::events/toggle-selected-events event])}]]]]]]))
+         :alt ""}]]]]))
+
+(defn activity-feed []
+  (let [following @(re-frame/subscribe [::subs/following])
+        npub @(re-frame/subscribe [::subs/npub])
+        _ (when (nil? following)
+            (when npub (re-frame/dispatch [::events/get-follow-set-for-npub npub])))
+        following-events @(re-frame/subscribe [::subs/posts-from-pks-actor-follows])
+        _ (.log js/console (count following-events) (< 5 (count following-events)))
+        _ (when (> 5 (count following-events))
+            (re-frame/dispatch [::events/events-from-pks-actor-follows following]))]
+
+    [:div
+     (doall
+      (for [event following-events]
+        [:p {:key (:id event)} (:content event)]))]))
 
 ;; events
 (defn events-panel []
-  (let [events @(re-frame/subscribe  [::subs/feed-events])
-        selected-events @(re-frame/subscribe  [::subs/selected-events])]
-    [:div {:class ""}
-     [:p (str "Num of events: " (count events))]
-     (if (> (count events) 0)
-       [:div {:class "flex flex-wrap justify-center gap-2"}
-        (doall
+  (fn []
+    (let [events @(re-frame/subscribe  [::subs/feed-events])
+          selected-events @(re-frame/subscribe  [::subs/selected-events])]
+      [:div {:class "flex flex-col mx-auto gap-4 "}
+       [activity-feed]
+       (if (> (count events) 0)
+         [:div {:class "divide-y divide-slate-500"}
+          (doall
+           (for [event  events]
+             [:div {:key (:id event)
+                    :class ""}
+              [metadata-event-component event]]))]
 
-         (for [event  events]
-           [:div {:key (:id event)}
-            [metadata-event-component event]]))]
-
-       [:p "no events there"])
-     [:button {:class "btn"
-               :disabled (not (boolean (seq selected-events)))
-               :on-click #(re-frame/dispatch [::events/add-metadata-event-to-list [{:d "unique-id-1"
-                                                                                    :name "Test List SC"}
-                                                                                   selected-events]])}
-      "Add To Lists"]]))
+         [:p "no events there"])
+       [:button {:class "btn"
+                 :disabled (not (boolean (seq selected-events)))
+                 :on-click #(re-frame/dispatch [::events/add-metadata-event-to-list [{:d "unique-id-1"
+                                                                                      :name "Test List SC"}
+                                                                                     selected-events]])}
+        "Add To Lists"]])))
 
 ;; event feed component
 (defn event-feed-component [event]
@@ -195,7 +153,7 @@
      [:h1 "Event Feed"]
      [:p (str "Num of events: " (count events))]
      (if (> (count events) 0)
-       [:div {:class "flex flex-row gap-2"}
+       [:div {:class "flex flex-col"}
         (doall
          (for [event events]
            [:div {:key (:id event)}
@@ -375,7 +333,8 @@
          "Add To Lists"]]]]]))
 
 (defn user-menu []
-  (let [pk @(re-frame/subscribe [::subs/pk])]
+  (let [pk @(re-frame/subscribe [::subs/pk])
+        user-profile (re-frame/subscribe [::subs/profile pk])]
     (if pk
       [:div
        {:class "dropdown dropdown-end"}
@@ -388,7 +347,7 @@
          [:img
           {:alt "user image",
            :src
-           (str "https://robohash.org/" pk)}]]]
+           (nostr/profile-picture @user-profile pk)}]]]
        [:ul
         {:tabIndex "0",
          :class
@@ -413,23 +372,21 @@
               "... with Extension"]]]])))
 
 ;; Header
-(defn new-header []
-  (let [selected-events @(re-frame/subscribe [::subs/selected-events])
-        pk @(re-frame/subscribe [::subs/pk])]
+(defn header []
+  (let [pk @(re-frame/subscribe [::subs/pk])]
     [:div
      {:class "navbar sticky z-50 top-0 left-0 bg-base-100"}
      [:div
       {:class "flex-1"}
-      [:a {:class "btn btn-ghost text-xl"
+      [:a {:class "cursor-pointer text-xl font-bold"
            :on-click #(re-frame/dispatch [::events/navigate [:home]])}
        "edufeed"]
       #_[:a {:class "btn btn-circle"
              :on-click #(re-frame/dispatch [::events/navigate [:event-feed]])} "Event-Feed"]]
      [:div
       {:class "flex-none"}
-
       [:a {:disabled (nil? pk)
-           :class "btn btn-circle btn-primary"
+           :class "btn btn-circle btn-primary text-xl"
            :on-click #(re-frame/dispatch [::events/navigate [:add-resource]])} "+"]
       (when (not (nil? pk))
         [shopping-cart])
@@ -445,24 +402,6 @@
 
 (defmethod routes/panels :keys-panel [] [keys-panel])
 
-;; Add Resource Panel
-(defn add-resource-panel []
-  [:div
-   {:class "sm:w-1/2 p-2 mx-auto flex flex-col space-y-4"}
-   [add-resource-form]
-   [:div
-    {:tabIndex "0",
-     :class "collapse collapse-arrow border-base-300 bg-base-200 border"}
-    [:div
-     {:class "collapse-title text-xl font-medium"}
-     "Advanced Options"]
-    [:div
-     {:class "collapse-content"}
-     [add-resource-by-json]
-     #_[add-resosurce-by-uri]]]])
-
-(defmethod routes/panels :add-resource-panel [] [add-resource-panel])
-
 ;; Settings
 (defn settings-panel []
   [:div
@@ -471,10 +410,25 @@
 
 (defmethod routes/panels :settings-panel [] [settings-panel])
 
+(defn sidepanel []
+  (let [pk (re-frame/subscribe [::subs/pk])]
+    (fn []
+      [:div {:class "static flex flex-col m-2 "}
+       [:ul {:class "menu rounded-box"}
+        [:li
+         [:a {:on-click #(re-frame/dispatch [::events/navigate [:home]])}
+          "Feed"]]
+        [:li [:a {:on-click #(re-frame/dispatch [::events/navigate [:search-view]])}
+              "Search"]]
+        [:li [:a  "My Network"]]
+        [:li  [:a {:on-click #(re-frame/dispatch [::events/navigate [:npub-view :npub (nostr/get-npub-from-pk @pk)]])}
+               "Bookmarks"]]
+        [:li [:a {:on-click #(re-frame/dispatch [::events/navigate [:opencard-view]])} "Opencard"]]]])))
+
 ;; Home
 (defn home-panel []
   (let [events (re-frame/subscribe [::subs/events])]
-    [:div
+    [:div {:class "basis-5/6"}
      [events-panel]
      [:p (count @events)]]))
 
@@ -542,9 +496,13 @@
 (defn main-panel []
   (let [active-panel (re-frame/subscribe [::subs/active-panel])]
     [:div {:class "relative"}
-     [new-header]
-     [:div {:class ""}
-      (routes/panels @active-panel)
+     [header]
+     [:div {:class "flex flex-row"}
+      [:div {:class "w-1/6"}
+       [sidepanel]]
+      [:div {:class "w-5/6 mt-1"}
+       [:div {:class ""}
+        (routes/panels @active-panel)]]
       [add-to-lists-modal]
       [create-list-modal]
       [event-data-modal]]]))

@@ -5,6 +5,7 @@
    [ied.events :as events]
    [ied.routes :as routes]
    [ied.views :as views]
+   [ied.subs :as subs]
    [ied.config :as config]))
 
 (defn dev-setup []
@@ -18,9 +19,10 @@
     (rdom/render [views/main-panel] root-el)))
 
 (defn init []
+  (let [default-relays (re-frame/subscribe [::subs/default-relays])]
   (routes/start!)
   (re-frame/dispatch-sync [::events/initialize-db])
-  (re-frame/dispatch [::events/connect-to-default-relays])
+  (re-frame/dispatch [::events/connect-to-default-relays @default-relays])
   (re-frame/dispatch [::events/set-visit-timestamp])
   (dev-setup)
-  (mount-root))
+  (mount-root)))

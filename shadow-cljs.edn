@@ -10,10 +10,11 @@
   [clj-commons/pushy "0.3.10"]
   [binaryage/devtools "1.0.6"]
   [day8.re-frame/re-frame-10x "1.9.3"]
-
+  [day8.re-frame/http-fx "0.2.4"]
   [funcool/promesa "11.0.678"]
-  [nilenso/wscljs "0.2.0"]
-  ]
+  [markdown-to-hiccup "0.6.2"]
+  [superstructor/re-frame-fetch-fx "0.4.0"]
+  [nilenso/wscljs "0.2.0"]]
 
  :dev-http
  {8280 "resources/public"

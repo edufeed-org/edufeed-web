@@ -7,6 +7,15 @@
    ["nostr-tools/pure" :as nostr]
    [cljs.core :as c]))
 
+;;;;;;;;;;;;;;;;;;;;
+;; Profile
+;;;;;;;;;;;;;;;;;;;;
+
+(defn profile-picture [profile pubkey]
+  (if (:picture profile)
+    (:picture profile)
+    (str "https://robohash.org/" pubkey)))
+
 (defn event-to-serialized-json [m]
   (let [event [0
                (:pubkey m)
@@ -47,10 +56,14 @@
 (defn sk-as-hex [sk]
   (byte-array-to-hex sk))
 
+(defn string-to-byte-array [s]
+  (let [encoder (js/TextEncoder.)]
+    (.encode encoder s)))
+
 (defn sk-as-nsec [sk]
   ;; let nsec = nip19.nsecEncode(sk)
   ;; sk should be byte-array
-  (.nsecEncode nip19 sk))
+  (.nsecEncode nip19 (string-to-byte-array sk)))
 
 (defn nsec-as-sk [nsec]
   ;; byte array is returned
@@ -84,10 +97,75 @@
     (.encode encoder s)))
 
 (defn get-npub-from-pk [pk]
-  (.npubEncode nip19 pk))
+  (.npubEncode nip19  pk))
+
+(comment
+  (get-npub-from-pk "1c5ff3caacd842c01dca8f378231b16617516d214da75c7aeabbe9e1efe9c0f6"))
 
 (defn get-pk-from-npub [npub]
   (.-data (.decode nip19 npub)))
+
+(comment
+  (get-pk-from-npub "npub1r30l8j4vmppvq8w23umcyvd3vct4zmfpfkn4c7h2h057rmlfcrmq9xt9ma"))
+
+(defn get-d-id-from-event [event]
+  (second (first (filter #(= "d" (first %)) (:tags event)))))
+
+(defn naddr-from-event [event]
+  (let [pk (:pubkey event)
+        relays #_(get-relays-from-event event) ["ws://localhost:7777" "wss://relay.sc24.steffen-roertgen.de"] ;; TODO how to know what relays to use here? do i need to remember where i fetched an event from? or maybe just skip?
+        kind (:kind event)
+        identifier (get-d-id-from-event event)
+        naddr (.naddrEncode nip19 (clj->js {:pubkey pk
+                                            :relays relays
+                                            :kind kind
+                                            :identifier identifier}))]
+    naddr))
+
+(defn decode-naddr
+  "Takes a nip-19 naddr and returns its data
+  Returns:
+  A map with `:identifier` `:pubkey` `:relays` `:kind`.
+  "
+  [naddr]
+
+  (:data (js->clj (.decode nip19 naddr) :keywordize-keys true)))
+
+(comment
+  (def addressable-event {:content "Added AMB Resource with d-tag",
+                          :created_at 1729616701,
+                          :id
+                          "dec183af8f1ac91dac3bb7716b8564ab515c050480721c7ee2ea308b51caf982",
+                          :kind 30142,
+                          :pubkey
+                          "1c5ff3caacd842c01dca8f378231b16617516d214da75c7aeabbe9e1efe9c0f6",
+                          :sig
+                          "17d54fc1a418100a41d8b9dd0eac5db0cad544bff84c5d13befa1c1791979fbf319234c9749a690d1cb166116741642deafb8b9c8f91a16590931f7eb80f3bb4",
+                          :tags
+                          [["d" "https://av.tib.eu/media/40427"]
+                           ["r" "https://av.tib.eu/media/40427"]
+                           ["id" "https://av.tib.eu/media/40427"]
+                           ["name" "Digitale Identitäten: Sicher, dezentral und Europäisch?"]
+                           ["description"
+                            "(de)#INFORMATIK2018 Panelgespräch: Digitale Identitäten: Sicher, dezentral und Europäisch? Moderation: Dr. Jan Sürmeli, TU Berlin • Prof. Dr. Reinhard Riedl, Präsident Schweizer InformatikGesellschaft (FH Bern) • Prof. Dr. Hannes Federrath, Präsident der Gesellschaft für Informatik (Universität Hamburg) • Prof. Dr. Kai Rannenberg, Präsidium der Gesellschaft für Informatik (Uni Frankfurt) • Prof. Dr. Stefan Jähnichen, TU Berlin / FZI Forschungszentrum Informatik • Benjamin Helfritz, DIN Deutsches Institut für Normung e.V. • Arno Fiedler, Vorstand Sichere Identität Berlin Brandenburg"]
+                           ["keywords" "Computer Science"]
+                           ["image" "https://av.tib.eu/thumbnail/40427"]
+                           ["about"
+                            "https://w3id.org/kim/hochschulfaechersystematik/n71"
+                            "Studienbereich Informatik"
+                            "de"]
+                           ["about"
+                            "https://w3id.org/kim/hochschulfaechersystematik/n8"
+                            "Ingenieurwissenschaften"
+                            "de"]
+                           ["creator" "test-uri" "maxi muster"]
+                           ["creator" "" "maxa muster"]
+                           ["inLanguage" "de"]]})
+  (naddr-from-event addressable-event)
+  (get-creators-from-metadata-event addressable-event)
+  (.log js/console (clj->js addressable-event))
+
+  (decode-naddr "naddr1qvzqqqr4hcpzq8zl7092ekzzcqwu4rehsgcmzesh29kjznd8t3aw4wlfu8h7ns8kqqwksar5wpen5te0v9mzuarfvghx2af0d4jkg6tp9u6rqdpjxunlx7u8"))
 
 ;; TODO make multimethod?
 (defn get-list-name [list]
@@ -96,13 +174,19 @@
       (second (first (filter #(= "d" (first %)) (:tags list))))
       (str "No name found for List-ID: " (:id list))))
 
-(defn get-d-id-from-event [event]
-  (second (first (filter #(= "d" (first %)) (:tags event)))))
-
 (defn get-name-from-metadata-event [event]
   (or (second (first (filter #(= "name" (first %)) (:tags event))))
+      (second (first (filter #(= "title" (first %)) (:tags event))))
       (second (first (filter #(= "id" (first %)) (:tags event))))
       (str "No name found for Metadata-Event: " (:id event))))
+
+(defn get-creators-from-metadata-event [event]
+  (or (map (fn [e] {:id (second e)
+                    :name (nth e 2 "n/a")}) (filter #(= "creator" (first %)) (:tags event)))
+      (str "No creators found for Metadata-Event: " (:id event))))
+
+(defn get-keywords-from-metadata-event [event]
+  (rest (first (filter (fn [e] (= "keywords" (first e))) (:tags event)))))
 
 (defn get-image-from-metadata-event [event]
   (or (let [img-url (second (first (filter #(= "image" (first %)) (:tags event))))]
@@ -182,7 +266,7 @@
      (seq metadata-event-ids-in-list)
      (contains? metadata-event-ids-in-list event-id))))
 
-(defn build-kind-30142-tag [event]
+(defn build-tag-for-adressable-event [event]
   ["a" (str "30142:" (:id event) ":" (second (first (filter #(= "d" (first %)) (:tags event)))))])
 
 (defn get-event-ids-from-list [list]

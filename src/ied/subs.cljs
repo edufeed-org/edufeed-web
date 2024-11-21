@@ -1,6 +1,7 @@
 (ns ied.subs
   (:require
    [re-frame.core :as re-frame]
+   [ied.events :as events]
    [clojure.string :as str]
    [clojure.set :as set]
    [ied.nostr :as nostr]))
@@ -25,6 +26,15 @@
  (fn [db _]
    (:events db)))
 
+(re-frame/reg-sub
+ ::event-by-id
+ (fn [db [_ id]]
+   (first (filter #(= (:id %) id) (:events db)))))
+
+(re-frame/reg-sub
+  ::events-by-d-tag
+  (fn [db [_ d]]
+    (sort-by :created_at #(> %1 %2) (filter #(= d (nostr/get-d-id-from-event %)) (:events db)))))
 
 (re-frame/reg-sub
  ::metadata-events
@@ -44,7 +54,9 @@
 (re-frame/reg-sub
  ::npub
  (fn [db _]
-   (nostr/get-npub-from-pk (:pk db))))
+   (if (:pk db)
+     (nostr/get-npub-from-pk (:pk db))
+     nil)))
 
 (re-frame/reg-sub
  ::nsec
@@ -93,7 +105,7 @@
            deleted-list-ids)
   (not (contains? deleted-list-ids d-id)))
 
-(defn most-recent-by-d-tag
+(defn most-recent-event-by-d-tag
   [events]
   (->> events
        (group-by (fn [event]
@@ -112,9 +124,9 @@
  :<- [::deleted-list-ids]
  (fn [[list-kinds events deleted-lists]]
    (let [all-lists (filter #(and (some #{(:kind %)} list-kinds)
-                                 #_(d-id-not-in-deleted-list-ids (get-d-id-from-tags (:tags %)) deleted-lists))
+                                 (d-id-not-in-deleted-list-ids (get-d-id-from-tags (:tags %)) deleted-lists))
                            events)
-         most-recent-lists (most-recent-by-d-tag all-lists)]
+         most-recent-lists (most-recent-event-by-d-tag all-lists)]
      #_(.log js/console "all lists: " (clj->js all-lists))
      #_(.log js/console "most recent lists: " (clj->js most-recent-lists))
      most-recent-lists)))
@@ -210,6 +222,120 @@
    (filter (fn [e] (contains? event-ids (:id e))) (:events db))))
 
 (re-frame/reg-sub
-  ::visited-at
+ ::visited-at
+ (fn [db _]
+   (:visited-at db)))
+
+(re-frame/reg-sub
+ ::follow-sets
+ (fn [db _]
+   (filter #(= 30000 (:kind %)) (:events db))))
+
+(re-frame/reg-sub
+  ;; returns a vector of pks of people the actor follows
+ ::following
+ :<- [::follow-sets]
+ :<- [::pk]
+ (fn [[follow-sets pk]]
+   (let [f (->> follow-sets
+                (filter #(= pk (:pubkey %)))
+                (map :tags)
+                (apply concat)
+                (filter #(= "p" (first %)))
+                (map second))]
+     f)))
+
+(re-frame/reg-sub
+ ::posts-from-pks-actor-follows
+ :<- [::following]
+ :<- [::events]
+ (fn [[following-pks events]]
+   (->> events
+        (filter (fn [e] (some #(= (:pubkey e) %) following-pks)))
+        (filter #(= 1 (:kind %))))))
+
+(re-frame/reg-sub
+ ::concept-schemes
+ (fn [db [_ schemes]]
+   (into {} (map (fn [cs]
+                   [cs (get-in db [:concept-schemes cs]) nil])
+                 schemes))))
+
+(comment
+  (get-in {:concept-schemes {"1" :yes "2" :no}} [:concept-schemes "3"] nil))
+
+(re-frame/reg-sub
+ ::toggled-concepts
+ (fn [db]
+   (apply concat (vals  (:md-form-resource db)))))
+
+(re-frame/reg-sub
+ ::toggled
+ :<- [::toggled-concepts]
+ (fn [[toggled-concepts] id]
+   (some #(= (:id %) id) toggled-concepts)))
+
+(re-frame/reg-sub
+ ::md-form-array-input-fields
+ (fn [db [_ field]]
+   (get-in db [:md-form-resource field] {(random-uuid) nil})))
+
+(re-frame/reg-sub
+ ::search-results
+ (fn [db]
+   (get db :search-results [])))
+
+(re-frame/reg-sub
+ ::grouped-search-results
+ :<- [::search-results]
+ (fn [search-results]
+   (group-by #(get-in % [:document :resource_id])  search-results)))
+
+(defn profile-from-db [db pubkey] ;; TODO think about if this will always fetch the latest profile
+  (js->clj (js/JSON.parse (:content (first (filter #(and (= 0 (:kind %))
+                                                         (= pubkey (:pubkey %))) (:events db)))))
+           :keywordize-keys true))
+
+(re-frame/reg-sub
+ ::profile
+ (fn [db [_ pubkey]]
+   (let [profile (profile-from-db db pubkey)]
+     (when (nil? profile)
+       (re-frame/dispatch [::events/load-profile pubkey]))
+     profile)))
+
+(re-frame/reg-sub
+ ::profiles
+ (fn [db [_ pubkeys]]
+   (let [profiles (map (fn [p] [p (profile-from-db db p)]) pubkeys)]
+     (doseq [[pubkey profile] profiles]
+       (when (nil? profile)
+         (re-frame/dispatch [::events/load-profile pubkey])))
+     profiles))) ;; unique profiles
+
+(re-frame/reg-sub 
+  ::md-form-image
   (fn [db _]
-    (:visited-at db)))
+    (-> db :md-form-resource :image)))
+
+(re-frame/reg-sub
+  ::selected-md-scheme
+  (fn [db]
+    (:selected-md-scheme db)))
+
+(re-frame/reg-sub
+  ::md-form-resource
+  (fn [db]
+    (:md-form-resource db)))
+
+(re-frame/reg-sub
+  ::user-language
+  (fn [db] 
+    (:user-language db)))
+
+(comment
+  @(re-frame/subscribe [::profile "1c5ff3caacd842c01dca8f378231b16617516d214da75c7aeabbe9e1efe9c0f6"])
+  
+ @(re-frame/subscribe [::md-form-resource])
+ @(re-frame/subscribe [::md-form-image])
+  )
