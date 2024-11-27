@@ -10,6 +10,7 @@
    [ied.opencard.views :as opencard]
    [ied.views.search :as search]
    [ied.views.resource :as resource]
+   [ied.components.modals :as modals]
    [ied.views.add :as add]
    [ied.components.resource :as resource-component]
    [reagent.core :as reagent]))
@@ -185,72 +186,6 @@
        [:p "No relays found"]
        ;(re-frame/dispatch [::events/connect-to-default-relays])
        )]))
-;; Add to lists modal
-(defn create-list-modal []
-  (let [name (reagent/atom "")
-        visible? @(re-frame/subscribe [::subs/show-create-list-modal])]
-    (when visible?
-      [:dialog {:open visible? :class "modal"}
-       [:div {:class "modal-box relative flex flex-col"}
-        [:h3 {:class "text-lg font-bold"} "Hello!"]
-        [:p {:class "py-4"} "Press ESC key or click outside to close"]
-        [:input
-         {:type "text"
-          :on-change (fn [e] (reset! name (-> e .-target .-value)))
-          :placeholder "List Name"
-          :class "input input-bordered w-full max-w-xs"}]
-        [:button {:class "btn"
-                  :on-click #(re-frame/dispatch [::events/create-new-list @name])} "Create New List"]]
-
-       [:form {:on-click #(re-frame/dispatch [::events/toggle-show-create-list-modal])
-               :method "dialog" :class "modal-backdrop"}
-        [:button "close"]]])))
-
-(defn add-to-lists-modal []
-  (let [selected-list-ids @(re-frame/subscribe [::subs/selected-list-ids])
-        selected-lists @(re-frame/subscribe [::subs/selected-lists])
-        selected-metadata-events @(re-frame/subscribe [::subs/selected-events])
-        visible? @(re-frame/subscribe [::subs/show-lists-modal])
-        lists @(re-frame/subscribe [::subs/lists-of-user])
-        sorted-lists (nostr/sort-lists lists)]
-    (when visible?
-      [:dialog {:open visible? :class "modal"}
-       [:div {:class "modal-box relative flex flex-col"}
-        [:h3 {:class "text-lg font-bold"}
-         "Hello!"]
-        [:p {:class "py-4"}
-         "Press ESC key or click outside to close"]
-        (doall
-         (for [l lists]
-           (let [in-selected-lists (or (and (seq selected-metadata-events)
-                                            (every? (fn [e] (nostr/list-contains-metadata-event? l e)) selected-metadata-events))
-                                       (contains? selected-list-ids (:id l)))
-                 div-class (str "m-2 flex flex-row items-center rounded border border-solid border-white p-2 "
-                                (if in-selected-lists
-                                  "bg-green-500 text-black"
-                                  "hover:bg-orange-500 hover:text-black"))]
-
-             [:div {:class div-class
-                    :key (nostr/get-list-name l)
-                    :on-click #(re-frame/dispatch [::events/toggle-selected-list-ids (:id l)])}
-              [:p {:class "text-xl font-bold"}
-               (nostr/get-list-name l)]
-              (when in-selected-lists
-                [icons/checkmark])])))
-        [:div {:class "flex flex-row"}
-         [:button {:on-click #(re-frame/dispatch [::events/add-metadata-events-to-lists [selected-metadata-events selected-lists]])
-                   :class "btn"}
-          "Add Resources To Lists"]
-         [:button {:class "btn ml-auto mr-0"
-                   :on-click #(re-frame/dispatch [::events/toggle-show-create-list-modal])}
-          "Create New List"]]]
-
-       [:form {:on-click #(re-frame/dispatch [::events/toggle-show-lists-modal])
-               :method "dialog"
-               :class "modal-backdrop"}
-        [:button
-         "close"]]])))
-
 ;; shopping cart
 (defn shopping-cart []
   (let [selected-events @(re-frame/subscribe [::subs/selected-events])]
@@ -272,7 +207,10 @@
              " Items")]
        [:div {:class "card-actions"}
         [:button {:class "btn"
-                  :on-click #(re-frame/dispatch [::events/toggle-show-lists-modal])}
+                  :on-click #((modals/open-add-to-list-modal)
+
+                              ; re-frame/dispatch [::events/toggle-show-lists-modal]
+                              )}
          "Add To Lists"]]]]]))
 
 (defn user-menu []
@@ -430,7 +368,7 @@
         (for [l lists]
           ^{:key (:id l)} [list-component l])))
      [:button {:class "btn ml-auto mr-0"
-               :on-click #(re-frame/dispatch [::events/toggle-show-create-list-modal])}
+               :on-click #((modals/open-create-list-modal))}
       "Create New List"]]))
 
 (defmethod routes/panels :npub-view-panel [] [npub-view-panel])
@@ -446,7 +384,7 @@
       [:div {:class "w-5/6 mt-1"}
        [:div {:class ""}
         (routes/panels @active-panel)]]
-      [add-to-lists-modal]
-      [create-list-modal]
+      [modals/add-to-lists-modal]
+      [modals/create-list-modal]
       [event-data-modal]]]))
 

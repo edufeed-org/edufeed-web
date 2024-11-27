@@ -53,8 +53,6 @@
                       :type ["search"]}])
    :selected-events #{}
    :selected-list-ids #{}
-   :show-lists-modal false
-   :show-create-list-modal false
    :show-event-data-modal false
    :sockets []
    :search-results nil
