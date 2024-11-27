@@ -375,7 +375,9 @@
          _ (.log js/console (clj->js dispatch-events))]
      {:fx [[:dispatch-n dispatch-events]]})))
 
-(defn sanitize-subscription-id [s]
+(defn sanitize-subscription-id 
+  "cuts the subscription string at 64 chars"
+  [s]
   (str/join "" (take 64 s)))
 
 (defn make-sub-id [prefix id]
@@ -449,11 +451,13 @@
                 {:ids event-ids}]]
      {::request-from-relay [sockets query]})))
 
+;; FIXME at some future point in time we should think about cancelling subscriptions after success
+;; at least for these it might make sense
 (re-frame/reg-event-fx
  ::query-for-d-tag
  (fn [db [_ [sockets d-tags]]]
    (let [query ["REQ"
-                "RAND42"
+                (sanitize-subscription-id (first d-tags)) ;;TODO guess this can be made more sensible
                 {:#d d-tags}]]
      {::request-from-relay [sockets query]})))
 
