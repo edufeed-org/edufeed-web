@@ -32,9 +32,14 @@
    (first (filter #(= (:id %) id) (:events db)))))
 
 (re-frame/reg-sub
-  ::events-by-d-tag
-  (fn [db [_ d]]
-    (sort-by :created_at #(> %1 %2) (filter #(= d (nostr/get-d-id-from-event %)) (:events db)))))
+ ::events-by-d-tag
+ :<- [::sockets]
+ :<- [::events]
+ (fn [[sockets events] [_ d]]
+   (let [filtered-events (filter #(= d (nostr/get-d-id-from-event %)) events)]
+     (if-not (empty? filtered-events)
+       (sort-by :created_at #(> %1 %2) filtered-events)
+       (re-frame/dispatch [::events/query-for-d-tag [sockets [d]]])))))
 
 (re-frame/reg-sub
  ::metadata-events
@@ -313,29 +318,28 @@
          (re-frame/dispatch [::events/load-profile pubkey])))
      profiles))) ;; unique profiles
 
-(re-frame/reg-sub 
-  ::md-form-image
-  (fn [db _]
-    (-> db :md-form-resource :image)))
+(re-frame/reg-sub
+ ::md-form-image
+ (fn [db _]
+   (-> db :md-form-resource :image)))
 
 (re-frame/reg-sub
-  ::selected-md-scheme
-  (fn [db]
-    (:selected-md-scheme db)))
+ ::selected-md-scheme
+ (fn [db]
+   (:selected-md-scheme db)))
 
 (re-frame/reg-sub
-  ::md-form-resource
-  (fn [db]
-    (:md-form-resource db)))
+ ::md-form-resource
+ (fn [db]
+   (:md-form-resource db)))
 
 (re-frame/reg-sub
-  ::user-language
-  (fn [db] 
-    (:user-language db)))
+ ::user-language
+ (fn [db]
+   (:user-language db)))
 
 (comment
   @(re-frame/subscribe [::profile "1c5ff3caacd842c01dca8f378231b16617516d214da75c7aeabbe9e1efe9c0f6"])
-  
- @(re-frame/subscribe [::md-form-resource])
- @(re-frame/subscribe [::md-form-image])
-  )
+
+  @(re-frame/subscribe [::md-form-resource])
+  @(re-frame/subscribe [::md-form-image]))

@@ -447,8 +447,16 @@
    (let [query ["REQ"
                 "RAND42"
                 {:ids event-ids}]]
-
      {::request-from-relay [sockets query]})))
+
+(re-frame/reg-event-fx
+ ::query-for-d-tag
+ (fn [db [_ [sockets d-tags]]]
+   (let [query ["REQ"
+                "RAND42"
+                {:#d d-tags}]]
+     {::request-from-relay [sockets query]})))
+
 
 (defn cleanup-list-name [s]
   (-> s

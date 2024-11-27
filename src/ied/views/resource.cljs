@@ -11,31 +11,28 @@
   (let [route-params @(re-frame/subscribe [::subs/route-params])
         naddr (:naddr route-params)
         data (nostr/decode-naddr naddr)
-        events-with-same-d (re-frame/subscribe [::subs/events-by-d-tag (:identifier data)])
-        latest-event (first @events-with-same-d)
-        _ (.log js/console "events with same d id" (clj->js @events-with-same-d))
-        ; _ (.log js/)
-        ]
-
-    [:div
-     (case (:kind data)
-       30142 [:div {:class "flex flex-col"}
-              [:img {:class "w-full object-contain bg-transparent max-h-[40vh] "
-                     :src (nostr/get-image-from-metadata-event  latest-event)}]
-              [:h1 {:class "text-2xl font-bold"} (nostr/get-name-from-metadata-event latest-event)]
-              [:div
-               (resource-component/skos-tags [@events-with-same-d "about"])]
+        events-with-same-d (re-frame/subscribe [::subs/events-by-d-tag (:identifier data)])]
+    (fn []
+      (let [latest-event (first @events-with-same-d)]
+        [:div
+         (case (:kind latest-event)
+           30142 [:div {:class "flex flex-col"}
+                  [:img {:class "w-full object-contain bg-transparent max-h-[40vh] "
+                         :src (nostr/get-image-from-metadata-event  latest-event)}]
+                  [:h1 {:class "text-2xl font-bold"} (nostr/get-name-from-metadata-event latest-event)]
+                  [:div
+                   (resource-component/skos-tags [@events-with-same-d "about"])]
               ;; Keywords
-              [:div
-               (doall
-                (for [kw (nostr/get-keywords-from-metadata-event latest-event)]
-                  (resource-components/keywords-component kw)))]
+                  [:div
+                   (doall
+                    (for [kw (nostr/get-keywords-from-metadata-event latest-event)]
+                      (resource-components/keywords-component kw)))]
               ;; Author
-              [:div {:class "ml-auto mr-0 my-2"}
-               (resource-component/authors-component latest-event)]
-              [:p (nostr/get-description-from-metadata-event latest-event)]]
+                  [:div {:class "ml-auto mr-0 my-2"}
+                   (resource-component/authors-component latest-event)]
+                  [:p (nostr/get-description-from-metadata-event latest-event)]]
 
-       [:p "Dunno how to render that, sorry 🤷"])]))
+           [:p "Dunno how to render that, sorry 🤷"])]))))
 
 (comment
   (re-frame/subscribe [::subs/events-by-d-tag "https://langsci-press.org/catalog/book/406"]))
