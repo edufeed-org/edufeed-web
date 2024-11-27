@@ -19,7 +19,9 @@
   ;; group key is the identifier of the concept
   ;; values is an array of events that referenced the concept
   (let [_ (println "values " values)
-        pubkeys (map :pubkey values)
+        pubkeys (->> values
+                    (filter #(= "de" (:label-language %))) 
+                    (map :pubkey))
         profiles (re-frame/subscribe [::subs/profiles pubkeys])
         user-language (re-frame/subscribe [::subs/user-language])
         _ (js/console.log "group key and values" (clj->js values))
@@ -87,7 +89,7 @@
   ^{:key kw} [:div {:on-click #(do
                                  (re-frame/dispatch [::events/navigate [:search-view]])
                                  (re-frame/dispatch [::events/handle-filter-search ["keywords" kw]]))
-                    :class "badge badge-secondary m-1 cursor-pointer"}
+                    :class "badge badge-secondary m-1 cursor-pointer truncate"}
               (str "#" kw)])
 
 ; (defn keywords-component [kw]
