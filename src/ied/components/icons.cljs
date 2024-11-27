@@ -113,3 +113,15 @@
      :stroke-width "2",
      :d
      "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"}]])
+
+(defn looking-glass []
+  [:svg
+   {:xmlns "http://www.w3.org/2000/svg",
+    :viewBox "0 0 16 16",
+    :fill "currentColor",
+    :class "h-4 w-4 opacity-70"}
+   [:path
+    {:fill-rule "evenodd",
+     :d
+     "M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z",
+     :clip-rule "evenodd"}]])

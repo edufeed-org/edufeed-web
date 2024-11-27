@@ -75,9 +75,11 @@
 
         [:p {:class "line-clamp-3"} description]
 
-        [:label {:class "btn self-end mb-0 mt-auto "
-                 :on-click #(re-frame/dispatch [::events/navigate [:naddr-view :naddr naddr]])}
-         "Details"]]
+        [:div {:class "flex flex-row mb-0 mt-auto justify-between"}
+         [:label {:class "btn  "
+                  :on-click #(re-frame/dispatch [::events/navigate [:naddr-view :naddr naddr]])}
+          "Details"]
+         [resource-component/add-to-list latest-event]]]
 
        [:div {:class "w-1/4"}
         [:figure

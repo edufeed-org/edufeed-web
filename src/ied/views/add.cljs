@@ -81,11 +81,11 @@
          :about {:type :skos
                  :schemes ["https://w3id.org/kim/hochschulfaechersystematik/scheme"]}}})
 
-(defn concept-checkbox [concept field toggled]
+(defn concept-checkbox [concept field toggled disable-on-change]
   [:input {:type "checkbox"
            :checked (or toggled false)
            :class "checkbox checkbox-warning"
-           :on-change (fn [] (re-frame/dispatch [::events/toggle-concept [concept field]]))}])
+           :on-change (fn [] (when-not disable-on-change (re-frame/dispatch [::events/toggle-concept [concept field]])))}])
 
 (defn highlight-match
   "Wraps the matching part of the text in bold markers, preserving the original capitalization.
@@ -111,7 +111,7 @@
   [[concept field search-input]]
   (fn []
     (let [toggled-concepts @(re-frame/subscribe [::subs/toggled-concepts])
-          toggled (some #(= (:id %) (:id concept)) toggled-concepts)
+          toggled (some #(= (:id %) (:id concept)) toggled-concepts) ;; TODO could also be a subscription?
           prefLabel (highlight-match (-> concept :prefLabel :de) search-input)]
       [:li
        (if-let [narrower (:narrower concept)]
@@ -119,14 +119,13 @@
           [:summary {:class (when toggled "bg-orange-400 text-black")}
            [concept-checkbox concept field toggled]
            prefLabel]
-          [:ul {:tabindex "0"}
+          [:ul {:tabIndex "0"}
            (for [child narrower]
              ^{:key (:id child)} [concept-label-component [child field]])]]
          [:a {:class (when toggled "bg-orange-400 text-black")
               :on-click (fn [] (re-frame/dispatch [::events/toggle-concept [concept field]]))}
-          [concept-checkbox concept field toggled]
+          [concept-checkbox concept field toggled true]
           [:p
-           
            prefLabel]])])))
 
 (defn get-nested
@@ -201,13 +200,15 @@
            :class "btn m-1 grow w-full"}
           field-title]
          [:div {:class "dropdown-content z-[1]"}
-
           [:ul {:class "menu bg-base-200 rounded-box w-96 "
-                :tabindex "0"}
-           [:input {:class "input"
-                    :type "text"
-                    :on-change (fn [e]
-                                 (reset! search-input (-> e .-target .-value)))}]
+                :tabIndex "0"}
+           [:label {:class "input flex items-center gap-2"}
+            [:input {:class "grow"
+                     :placeholder "Suche..."
+                     :type "text"
+                     :on-change (fn [e]
+                                  (reset! search-input (-> e .-target .-value)))}]
+            [icons/looking-glass]]
            (doall
             (for [concept (:hasTopConcept filtered-cs)]
               ^{:key (str @search-input (:id concept))} [concept-label-component [concept field @search-input]]))]]]))))

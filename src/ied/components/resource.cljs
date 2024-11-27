@@ -84,11 +84,11 @@
        ^{:key k} [grouped-about-tags [k v]]))))
 
 (defn keywords-component [kw]
-  ^{:key kw}[:div {:on-click #(do
-                      (re-frame/dispatch [::events/navigate [:search-view]])
-                      (re-frame/dispatch [::events/handle-filter-search ["keywords" kw]]))
-         :class "badge badge-secondary m-1 cursor-pointer"}
-   (str "#" kw)])
+  ^{:key kw} [:div {:on-click #(do
+                                 (re-frame/dispatch [::events/navigate [:search-view]])
+                                 (re-frame/dispatch [::events/handle-filter-search ["keywords" kw]]))
+                    :class "badge badge-secondary m-1 cursor-pointer"}
+              (str "#" kw)])
 
 ; (defn keywords-component [kw]
 ;   [:div {:on-click #(re-frame/dispatch 
@@ -106,3 +106,16 @@
 
 (comment
   (hash "https://w3id.org/kim/hcrt/scheme"))
+
+(defn add-to-list [event]
+  (let [selected-events @(re-frame/subscribe  [::subs/selected-events])]
+
+    [:div
+     [:div {:class "form-control"}
+      [:label {:class "cursor-pointer label "}
+       [:span {:class "label-text m-2"} "Add to List "]
+       [:input
+        {:type "checkbox"
+         :checked (contains? (set (map #(:id %) selected-events)) (:id event))
+         :class "checkbox checkbox-success"
+         :on-change #(re-frame/dispatch [::events/toggle-selected-events event])}]]]]))

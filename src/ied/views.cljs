@@ -14,7 +14,6 @@
    [ied.components.resource :as resource-component]
    [reagent.core :as reagent]))
 
-
 ;; event data modal
 (defn event-data-modal []
   (let [visible? @(re-frame/subscribe [::subs/show-event-data-modal])
@@ -53,15 +52,7 @@
       [:div {:class "flex flex-row justify-between items-center"}
        [:button {:class "btn"
                  :on-click #(re-frame/dispatch [::events/toggle-show-event-data-modal event])} "Show Event Data"]
-       [:div
-        [:div {:class "form-control"}
-         [:label {:class "cursor-pointer label "}
-          [:span {:class "label-text m-2"} "Add to List "]
-          [:input
-           {:type "checkbox"
-            :checked (contains? (set (map #(:id %) selected-events)) (:id event))
-            :class "checkbox checkbox-success"
-            :on-change #(re-frame/dispatch [::events/toggle-selected-events event])}]]]]]]
+       [resource-component/add-to-list event]]]
      [:div {:class "w-1/4"}
       [:figure
        [:img
@@ -194,8 +185,6 @@
        [:p "No relays found"]
        ;(re-frame/dispatch [::events/connect-to-default-relays])
        )]))
-
-
 ;; Add to lists modal
 (defn create-list-modal []
   (let [name (reagent/atom "")
@@ -270,7 +259,7 @@
       {:tabIndex "0", :role "button", :class "btn btn-ghost btn-circle"}
       [:div
        {:class "indicator"}
-      [icons/shopping-cart ] 
+       [icons/shopping-cart]
        [:span {:class "badge badge-sm indicator-item"} (count selected-events)]]]
      [:div
       {:tabIndex "0",
