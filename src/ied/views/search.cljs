@@ -107,19 +107,17 @@
 
 ;; TODO make filters configurable with a map
 
-(def filters 
+(def filters
   [{:scheme "https://w3id.org/kim/hochschulfaechersystematik/scheme"
     :field :about
     :title "Fachsystematik"}
    {:scheme "https://w3id.org/kim/hcrt/scheme"
     :field :learningResourceType
-    :title "Typ"}
-   ])
+    :title "Typ"}])
 
 (defn filter-bar []
   (let [concept-schemes (re-frame/subscribe
                          [::subs/concept-schemes (map :scheme filters)])]
-
     (re-frame/dispatch
      [::events/fetch-missing-concept-schemes
       (->> @concept-schemes
@@ -134,13 +132,7 @@
           ^{:key (get-in @concept-schemes [(:scheme filter) :id])}
           [skos-multiselect-component [(get @concept-schemes (:scheme filter))
                                        (:field filter)
-                                       (:title filter)]]))
-       #_(doall
-        (for [cs (keys @concept-schemes)]
-          ^{:key (get-in @concept-schemes [cs :id])}
-          [skos-multiselect-component [(get @concept-schemes "https://w3id.org/kim/hcrt/scheme")
-                                       :learningResourceType
-                                       "Typ"]]))])))
+                                       (:title filter)]]))])))
 
 (defn has-any-values?
   "checks if a map has any values"
@@ -156,10 +148,15 @@
 (defn active-filters []
   (let [active-filters (re-frame/subscribe [::subs/active-filters])]
     (when (has-any-values?  @active-filters)
-      [:div
+      [:div {:class "my-2 flex flex-nowrap gap-2"}
        (doall
-        (for [field (keys @active-filters)]
-          [:div {:class "badge badge-secondary"} "hello"]))])))
+        (for [field (keys (filter (fn [[_ v]] (seq v)) @active-filters))]
+          (for [concept (field @active-filters)]
+            ^{:key (:id concept)} [:div {:class "flex flex-row badge badge-lg badge-secondary p-3 gap-1 cursor-default"}
+                                   [:span {:class ""} (-> concept :prefLabel :de)]
+                                   [:span {:on-click (fn [] (re-frame/dispatch [::events/toggle-concept [concept field]]))
+                                           :class "cursor-pointer"}
+                                    [icons/close-icon]]])))])))
 
 (defn search-bar []
   (let [search-term (reagent/atom nil)
