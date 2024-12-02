@@ -20,13 +20,13 @@
   ;; values is an array of events that referenced the concept
   (let [_ (println "values " values)
         pubkeys (->> values
-                    (filter #(= "de" (:label-language %))) 
-                    (map :pubkey))
+                     (filter #(= "de" (:label-language %)))
+                     (map :pubkey))
         profiles (re-frame/subscribe [::subs/profiles pubkeys])
-        user-language (re-frame/subscribe [::subs/user-language])
-        _ (js/console.log "group key and values" (clj->js values))
-        _ (js/console.log (clj->js @profiles))]
-    [:div {:on-click #(re-frame/dispatch [::events/handle-filter-search ["about.id" group-key]])
+        user-language (re-frame/subscribe [::subs/user-language])]
+    [:div {:on-click #(do
+                        (re-frame/dispatch [::events/navigate [:search-view]])
+                        (re-frame/dispatch [::events/handle-filter-search ["about.id" group-key]]))
            :data-tip (str
                       (str/join
                        ", "

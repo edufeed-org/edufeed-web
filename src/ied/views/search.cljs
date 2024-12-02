@@ -6,8 +6,9 @@
                [reagent.core :as reagent]
                [clojure.string :as str]
                [ied.components.resource :as resource-components]
+               [ied.components.skos-multiselect :refer [skos-multiselect-component]]
+               [ied.components.icons :as icons]
                [ied.nostr :as nostr]
-               [ied.components.resource :as resource-component]
                [cljs.core :as c]))
 
 ;; TODO refactor this to also work with raw event data
@@ -71,7 +72,7 @@
         [:div {:class "flex flex-wrap"}
          (doall
           (for [[k v] keywords]
-            ^{:key k} (resource-component/keywords-component k)))]
+            ^{:key k} (resource-components/keywords-component k)))]
 
         [:p {:class "line-clamp-3"} description]
 
@@ -79,7 +80,7 @@
          [:label {:class "btn  "
                   :on-click #(re-frame/dispatch [::events/navigate [:naddr-view :naddr naddr]])}
           "Details"]
-         [resource-component/add-to-list latest-event]]]
+         [resource-components/add-to-list latest-event]]]
 
        [:div {:class "w-1/4"}
         [:figure
@@ -90,31 +91,113 @@
            (nostr/get-image-from-metadata-event latest-event)
            :alt ""}]]]])))
 
-(defn search-view-panel []
+; (defn filter-bar []
+;   (let [concept-schemes (re-frame/subscribe
+;                           [::subs/concept-schemes ["https://w3id.org/kim/hochschulfaechersystematik/scheme"]])
+;         _ (doall (for [[cs-uri _] (filter (fn [[_ v]] (nil? v)) @concept-schemes)]
+;                    (re-frame/dispatch [::events/skos-concept-scheme-from-uri  cs-uri])))]
+
+;     (fn []
+;     [:div
+;      (doall
+;       (for [cs (keys @concept-schemes)]
+;         ^{:key cs} [skos-multiselect-component [(get @concept-schemes "https://w3id.org/kim/hochschulfaechersystematik/scheme")
+;                                                 :about
+;                                                 "Fachsystematik"]]))]))) ;; TODO reuse skos components
+
+;; TODO make filters configurable with a map
+
+(def filters 
+  [{:scheme "https://w3id.org/kim/hochschulfaechersystematik/scheme"
+    :field :about
+    :title "Fachsystematik"}
+   {:scheme "https://w3id.org/kim/hcrt/scheme"
+    :field :learningResourceType
+    :title "Typ"}
+   ])
+
+(defn filter-bar []
+  (let [concept-schemes (re-frame/subscribe
+                         [::subs/concept-schemes (map :scheme filters)])]
+
+    (re-frame/dispatch
+     [::events/fetch-missing-concept-schemes
+      (->> @concept-schemes
+           (filter (fn [[_ v]] (nil? v)))
+           (map first))])
+
+    ;;  TODO maybe put this in concept-scheme component?
+    (fn []
+      [:div
+       (doall
+        (for [filter filters]
+          ^{:key (get-in @concept-schemes [(:scheme filter) :id])}
+          [skos-multiselect-component [(get @concept-schemes (:scheme filter))
+                                       (:field filter)
+                                       (:title filter)]]))
+       #_(doall
+        (for [cs (keys @concept-schemes)]
+          ^{:key (get-in @concept-schemes [cs :id])}
+          [skos-multiselect-component [(get @concept-schemes "https://w3id.org/kim/hcrt/scheme")
+                                       :learningResourceType
+                                       "Typ"]]))])))
+
+(defn has-any-values?
+  "checks if a map has any values"
+  [m]
+  (some
+   (fn [[_ v]]
+     (cond
+       (map? v) (has-any-values? v)
+       (coll? v) (seq (filter (complement nil?) v))
+       :else (not (nil? v))))
+   m))
+
+(defn active-filters []
+  (let [active-filters (re-frame/subscribe [::subs/active-filters])]
+    (when (has-any-values?  @active-filters)
+      [:div
+       (doall
+        (for [field (keys @active-filters)]
+          [:div {:class "badge badge-secondary"} "hello"]))])))
+
+(defn search-bar []
   (let [search-term (reagent/atom nil)
-        grouped-results (re-frame/subscribe [::subs/grouped-search-results])
-        _ (.log js/console (clj->js @grouped-results))]
+        filters (re-frame/subscribe [::subs/active-filters])
+        show-filter-bar (reagent/atom false)]
+    (fn  []
+      [:div {:class "flex flex-col"}
+       [:div {:class "flex"} ;;TODO fix layout
+        [:form {:class "w-3/4"
+                :on-submit (fn [e]
+                             (.preventDefault e)
+                             (re-frame/dispatch [::events/handle-multi-filter-search [@filters @search-term]]))}
+         [:label
+          {:class "input input-bordered flex items-center gap-2 w-1/2 mx-auto"}
+          [:input {:type "search"
+                   :class "grow"
+                   :placeholder "Search"
+                   :on-change (fn [e] (reset! search-term (-> e .-target .-value)))}]
+          [:svg
+           {:xmlns "http://www.w3.org/2000/svg",
+            :viewBox "0 0 16 16",
+            :fill "currentColor",
+            :class "h-4 w-4 opacity-70"}
+           [:path
+            {:fill-rule "evenodd",
+             :d
+             "M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z",
+             :clip-rule "evenodd"}]]]]
+        [:button {:on-click #(reset! show-filter-bar (not @show-filter-bar))
+                  :class "btn"} [icons/filter-icon] "Filter"]]
+       [active-filters]
+       (when @show-filter-bar
+         [filter-bar])])))
+
+(defn search-view-panel []
+  (let [grouped-results (re-frame/subscribe [::subs/grouped-search-results])]
     [:div {:class ""}
-     [:form {:on-submit (fn [e]
-                          (.preventDefault e)
-                          (.log js/console @search-term)
-                          (re-frame/dispatch [::events/handle-search @search-term]))}
-      [:label
-       {:class "input input-bordered flex items-center gap-2 w-1/2 mx-auto"}
-       [:input {:type "search"
-                :class "grow"
-                :placeholder "Search"
-                :on-change (fn [e] (reset! search-term (-> e .-target .-value)))}]
-       [:svg
-        {:xmlns "http://www.w3.org/2000/svg",
-         :viewBox "0 0 16 16",
-         :fill "currentColor",
-         :class "h-4 w-4 opacity-70"}
-        [:path
-         {:fill-rule "evenodd",
-          :d
-          "M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z",
-          :clip-rule "evenodd"}]]]]
+     [search-bar]
      (when (not-empty @grouped-results)
        [:div {:class "divide-y divide-slate-700 flex flex-col gap-2"}
         (doall

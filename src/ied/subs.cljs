@@ -259,15 +259,36 @@
         (filter (fn [e] (some #(= (:pubkey e) %) following-pks)))
         (filter #(= 1 (:kind %))))))
 
+  ;  "Args:
+  ; - `schemes`: Array of strings identifying the concept schemes "
+; (re-frame/reg-sub
+;  ::concept-schemes
+;  (fn [db [_ schemes]]
+;    (into {} (map (fn [cs]
+;                    [cs (get-in db [:concept-schemes cs]) nil])
+;                  schemes))))
+
+(defn concept-schemes-sub
+  "Args:
+  - `schemes`: Array of strings identifying the concept schemes.
+  
+  Returns a map of concept scheme identifiers to their values in the app-db."
+  [db [_ schemes]]
+  (into {} (map (fn [cs]
+                  [cs (get-in db [:concept-schemes cs])])
+                schemes)))
+
 (re-frame/reg-sub
- ::concept-schemes
- (fn [db [_ schemes]]
-   (into {} (map (fn [cs]
-                   [cs (get-in db [:concept-schemes cs]) nil])
-                 schemes))))
+  ::concept-schemes
+  concept-schemes-sub)
 
 (comment
   (get-in {:concept-schemes {"1" :yes "2" :no}} [:concept-schemes "3"] nil))
+
+(re-frame/reg-sub
+  ::active-filters
+  (fn [db] 
+    (:md-form-resource db)))
 
 (re-frame/reg-sub
  ::toggled-concepts

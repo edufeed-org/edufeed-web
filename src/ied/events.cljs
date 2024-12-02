@@ -375,7 +375,7 @@
          _ (.log js/console (clj->js dispatch-events))]
      {:fx [[:dispatch-n dispatch-events]]})))
 
-(defn sanitize-subscription-id 
+(defn sanitize-subscription-id
   "cuts the subscription string at 64 chars"
   [s]
   (str/join "" (take 64 s)))
@@ -460,7 +460,6 @@
                 (sanitize-subscription-id (first d-tags)) ;;TODO guess this can be made more sensible
                 {:#d d-tags}]]
      {::request-from-relay [sockets query]})))
-
 
 (defn cleanup-list-name [s]
   (-> s
@@ -732,13 +731,26 @@
                  :on-success [::save-concept-scheme]
                  :on-failure [::failure]}}))
 
+(re-frame/reg-event-fx
+ ::fetch-missing-concept-schemes
+ (fn [{:keys [db]} [_ missing-uris]]
+   {:db db
+    :http-xhrio (map (fn [uri]
+                       {:method :get
+                        :uri (jsonize-uri uri)
+                        :timeout 5000
+                        :response-format (ajax/json-response-format {:keywords? true})
+                        :on-success [::save-concept-scheme]
+                        :on-failure [::failure]})
+                     missing-uris)}))
+
 (re-frame/reg-event-db
  ::toggle-concept
  (fn [db [_ [concept field]]]
    (update-in db [:md-form-resource field] (fn [coll]
                                              (if (some #(= (:id concept) (:id %)) coll)
                                                (filter (fn [e] (not= (:id e) (:id concept))) coll)
-                                               (conj coll (select-keys concept [:id :notation :prefLabel] )))))))
+                                               (conj coll (select-keys concept [:id :notation :prefLabel])))))))
 
 (re-frame/reg-event-db
  ::handle-md-form-input
@@ -783,17 +795,72 @@
 (defn sanitize-filter-term [term]
   (str/replace term #"[ ()]" " "))
 
+(defn build-url-for-multi-filter-search
+  "Builds a Typesense search URL with the given base URI, filters, and search term.
+
+  Arguments:
+  - `base-uri` (string): The base URL of the Typesense API (e.g., http://localhost:8108).
+  - `filters` (map): A map of filters where keys are filter attributes (keywords)
+     and values are collections of maps, each containing an `:id` key.
+     Example:
+     {:about [{:id \"https://example.org/1\"} {:id \"https://example.org/2\"}]
+      :type [{:id \"https://example.org/3\"}]}
+  - `search-term` (string): The term to search for, defaults to `*` for wildcard searches.
+
+  Returns:
+  - (string): A fully constructed URL for querying the Typesense API."
+  [base-uri filters search-term]
+  (let [extract-ids (fn [filter-key]
+                      (->> (get filters filter-key)
+                           (map :id)
+                           (str/join ",")))
+        filter-by (->> filters
+                       (filter (fn [[_ v]] (seq v))) ; Exclude empty values
+                       (map (fn [[filter-key _]]
+                              (let [ids (extract-ids filter-key)]
+                                (str (name filter-key) ".id" ":=[" ids "]"))))
+                       (str/join "&&"))]
+    (str base-uri
+         "?q=" (or search-term "*")
+         "&query_by=name,about,description,creator"
+         (when (seq filter-by)
+           (str "&filter_by=" filter-by)))))
+
+(re-frame/reg-event-fx
+  ::handle-multi-filter-search
+  (fn [cofx [_ [filters search-term]]]
+    (let [_ (.log js/console (clj->js filters ) )
+          uri (build-url-for-multi-filter-search (str config/typesense-uri "search")
+                                   filters
+                                   search-term)
+          _ (.log js/console "uri" uri)]
+      {:http-xhrio {:method :get
+                    :uri uri
+                    :headers {"x-typesense-api-key" "xyz"}
+                    :timeout 5000
+                    :response-format (ajax/json-response-format {:keywords? true})
+                    :on-success [::save-search-results]
+                    :on-failure [::failure]}})))
+
+(comment
+  "http://localhost:8108/collections/amb/documents//collections/amb/documents/search?q=chemie&query_by=name,about,description,creator"
+  "http://localhost:8108/collections/amb/documents/search?q=biologie&query_by=name,about,description,creator&filter_by=about.id:=[https://w3id.org/kim/hochschulfaechersystematik/n42]&&learningResourceType.id:=[]"
+  )
+
 (re-frame/reg-event-fx
  ::handle-filter-search
- (fn [cofx [_ [filter-attribute filter-term]]]
+ (fn [cofx [_ [filter-attribute filter-term search-term]]]
    (let [uri (str config/typesense-uri
-                  "search?q=*"
+                  "search?q="
+                  (or search-term "*")
                   "&query_by="
-                  "name"
-                  "&filter_by="
-                  filter-attribute
-                  ":="
-                  (sanitize-filter-term filter-term ))] ;; parantetheses seem to cause error when filtering
+                  "name,about,description,creator"
+                  (when filter-attribute
+                    (str
+                     "&filter_by="
+                     filter-attribute
+                     ":="
+                     (sanitize-filter-term filter-term))))] ;; parantetheses seem to cause error when filtering
      {:http-xhrio {:method :get
                    :uri uri
                    :headers {"x-typesense-api-key" "xyz"}
