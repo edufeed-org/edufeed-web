@@ -12,7 +12,6 @@
            :class "checkbox checkbox-warning"
            :on-change (fn [] (when-not disable-on-change (re-frame/dispatch [::events/toggle-concept [concept field]])))}])
 
-
 (defn highlight-match
   "Wraps the matching part of the text in bold markers, preserving the original capitalization.
    Arguments:
@@ -41,13 +40,13 @@
           prefLabel (highlight-match (-> concept :prefLabel :de) search-input)]
       [:li
        (if-let [narrower (:narrower concept)]
-         [:details {:open false}
+         [:details {:open (or search-input false)} ;; open on search
           [:summary {:class (when toggled "bg-orange-400 text-black")}
            [concept-checkbox concept field toggled]
            prefLabel]
           [:ul {:tabIndex "0"}
            (for [child narrower]
-             ^{:key (:id child)} [concept-label-component [child field]])]]
+             ^{:key (:id child)} [concept-label-component [child field search-input]])]]
          [:a {:class (when toggled "bg-orange-400 text-black")
               :on-click (fn [] (re-frame/dispatch [::events/toggle-concept [concept field]]))}
           [concept-checkbox concept field toggled true]
