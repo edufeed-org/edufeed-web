@@ -276,9 +276,11 @@
 ;; Keys Panel
 (defn keys-panel []
   (let [npub @(re-frame/subscribe [::subs/npub])
+        pk (nostr/get-pk-from-npub npub)
         nsec @(re-frame/subscribe [::subs/nsec])] [:div
                                                    [:h1 "Keys"]
                                                    [:p (str "Your Npub: " npub)]
+                                                   [:p (str "Your PK: " pk)]
                                                    [:p (str "Your Nsec: " nsec)]]))
 
 (defmethod routes/panels :keys-panel [] [keys-panel])
