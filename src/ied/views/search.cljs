@@ -129,7 +129,7 @@
       [:div
        (doall
         (for [filter filters]
-          ^{:key (get-in @concept-schemes [(:scheme filter) :id])}
+          ^{:key  (:scheme filter)}
           [skos-multiselect-component [(get @concept-schemes (:scheme filter))
                                        (:field filter)
                                        (:title filter)]]))])))
